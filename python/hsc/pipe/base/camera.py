@@ -14,7 +14,10 @@ def getButler(instrument, rerun=None, **kwargs):
     inPath = os.path.join(os.environ[envar], "SUPA")
     outPath = os.path.join(os.environ[envar], "SUPA", "rerun", rerun)
     if not os.path.exists(outPath):
-        os.makedirs(outPath) # should be in butler
+        # Subject to race condition
+        try:
+            os.makedirs(outPath) # should be in butler
+        except: pass
     if not 'root' in kwargs: kwargs['root'] = inPath
     if not 'outputRoot' in kwargs: kwargs['outputRoot'] = outPath
 
