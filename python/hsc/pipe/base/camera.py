@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import errno
 import lsst.daf.persistence as dafPersist
 
 def getButler(instrument, rerun=None, **kwargs):
@@ -17,7 +18,9 @@ def getButler(instrument, rerun=None, **kwargs):
         # Subject to race condition
         try:
             os.makedirs(outPath) # should be in butler
-        except: pass
+        except OSError, e:
+            if not e.errno == errno.EEXIST:
+                raise
     if not 'root' in kwargs: kwargs['root'] = inPath
     if not 'outputRoot' in kwargs: kwargs['outputRoot'] = outPath
 
