@@ -7,7 +7,7 @@ import lsst.daf.persistence as dafPersist
 def getButler(instrument, rerun=None, **kwargs):
     """Return a butler for the appropriate instrument"""
     if rerun is None:
-        rerun = os.getlogin()
+        rerun = os.environ["LOGNAME"]
 
     envar = "SUPRIME_DATA_DIR"
     if not os.environ.has_key(envar):
