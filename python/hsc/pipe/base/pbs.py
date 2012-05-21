@@ -80,6 +80,7 @@ class Pbs(object):
             print >>f, "#PBS -q %s" % self.queue
         print >>f, "#PBS -j oe"
         print >>f, "#PBS -W umask=02"
+        print >>f, exportEnv()
         print >>f, "echo \"mpiexec is at: $(which mpiexec)\""
         print >>f, "ulimit -a"
         print >>f, "umask 02"
@@ -102,3 +103,16 @@ class Pbs(object):
         return script
 
 
+def exportEnv():
+    """Generate bash script to regenerate the current environment"""
+    output = ""
+    for key, val in os.environ.items():
+        if val.startswith("() {"):
+            # This is a function.
+            # "Two parentheses, a single space, and a brace"
+            # is exactly the same criterion as bash uses.
+            output += "function {key} {val}\nexport -f {key}\n".format(key=key, val=val)
+        else:
+            # This is a variable.
+            output += "export {key}='{val}'\n".format(key=key, val=val.replace("'", "'\"'\"'"))
+    return output
