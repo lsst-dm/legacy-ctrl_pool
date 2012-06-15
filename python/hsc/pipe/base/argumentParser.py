@@ -17,15 +17,10 @@ class RerunAction(argparse.Action):
         if namespace.outPath:
             raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
 
-        envar = "SUPRIME_DATA_DIR"
-        if os.environ.has_key(envar):
-            namespace.rerun = values
-            namespace.outPath = os.path.join(os.environ[envar], "SUPA", "rerun", namespace.rerun)
-            if not os.path.exists(namespace.outPath):
-                os.makedirs(namespace.outPath) # should be in butler
-        else:
-            raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
-
+        namespace.rerun = values
+        namespace.outPath = os.path.join(namespace.dataPath, "rerun", namespace.rerun)
+        if not os.path.exists(namespace.outPath):
+            os.makedirs(namespace.outPath) # should be in butler
 
 class HscArgumentParser(ArgumentParser):
     def __init__(self, *args, **kwargs):
