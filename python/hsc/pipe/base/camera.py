@@ -30,7 +30,7 @@ def getButler(instrument, rerun=None, **kwargs):
                 if not e.errno == errno.EEXIST:
                     raise
 
-    if instrument.lower() in ["hsc"]:
+    if instrument.lower() in ["hsc", "hscsim"]:
         import lsst.obs.hscSim as obsHsc
         mapper = obsHsc.HscSimMapper(**kwargs)
     elif instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
