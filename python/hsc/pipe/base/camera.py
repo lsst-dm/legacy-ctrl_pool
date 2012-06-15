@@ -10,19 +10,25 @@ def getButler(instrument, rerun=None, **kwargs):
         rerun = os.environ["LOGNAME"]
 
     envar = "SUPRIME_DATA_DIR"
-    if not os.environ.has_key(envar):
-        raise RuntimeError("You must define $%s ; did you setup suprime_data?" % envar)
-    inPath = os.path.join(os.environ[envar], "SUPA")
-    outPath = os.path.join(os.environ[envar], "SUPA", "rerun", rerun)
-    if not os.path.exists(outPath):
-        # Subject to race condition
-        try:
-            os.makedirs(outPath) # should be in butler
-        except OSError, e:
-            if not e.errno == errno.EEXIST:
-                raise
-    if not 'root' in kwargs: kwargs['root'] = inPath
-    if not 'outputRoot' in kwargs: kwargs['outputRoot'] = outPath
+
+    if kwargs.get('root', None):
+        root = kwargs['root']
+    else:
+        if not os.environ.has_key(envar):
+            raise RuntimeError("You must define $%s ; did you setup suprime_data?" % envar)
+        root = os.path.join(os.environ[envar], "SUPA")
+        kwargs['root'] = root
+
+    if not kwargs.get('outputRoot', None):
+        outPath = os.path.join(root, "rerun", rerun)
+        kwargs['outputRoot'] = outPath
+        if not os.path.exists(outPath):
+            # Subject to race condition
+            try:
+                os.makedirs(outPath) # should be in butler
+            except OSError, e:
+                if not e.errno == errno.EEXIST:
+                    raise
 
     if instrument.lower() in ["hsc"]:
         import lsst.obs.hscSim as obsHsc
