@@ -19,6 +19,10 @@ def getButler(instrument, rerun=None, **kwargs):
         import lsst.obs.suprimecam as obsSc
         Mapper = obsSc.SuprimecamMapper
         addDir = "SUPA"
+    elif instrument.lower() in ["suprimecam-mit", "sc-mit", "mit"]:
+        import lsst.obs.suprimecam as obsSc
+        Mapper = obsSc.SuprimecamMapper
+        kwargs['mit'] = True
     else:
         raise RuntimeError("Unrecognised instrument: %s" % instrument)
 
@@ -42,7 +46,6 @@ def getButler(instrument, rerun=None, **kwargs):
                 if not e.errno == errno.EEXIST:
                     raise
 
-
     mapper = Mapper(**kwargs)
 
     return dafPersist.ButlerFactory(mapper=mapper).create()
@@ -54,6 +57,8 @@ def getNumCcds(instrument):
     if instrument.lower() in ["hsc", "hscsim"]:
         return 104
     if instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
+        return 10
+    elif instrument.lower() in ["suprimecam-mit", "mit"]:
         return 10
     raise RuntimeError("Unrecognised instrument: %s" % instrument)
 
