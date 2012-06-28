@@ -11,12 +11,24 @@ def getButler(instrument, rerun=None, **kwargs):
 
     envar = "SUPRIME_DATA_DIR"
 
+    if instrument.lower() in ["hsc", "hscsim"]:
+        import lsst.obs.hscSim as obsHsc
+        Mapper = obsHsc.HscSimMapper
+        addDir = "HSC"
+    elif instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
+        import lsst.obs.suprimecam as obsSc
+        Mapper = obsSc.SuprimecamMapper
+        addDir = "SUPA"
+    else:
+        raise RuntimeError("Unrecognised instrument: %s" % instrument)
+
     if kwargs.get('root', None):
         root = kwargs['root']
     else:
         if not os.environ.has_key(envar):
             raise RuntimeError("You must define $%s ; did you setup suprime_data?" % envar)
-        root = os.path.join(os.environ[envar], "SUPA")
+        
+        root = os.path.join(os.environ[envar], addDir)
         kwargs['root'] = root
 
     if not kwargs.get('outputRoot', None):
@@ -30,16 +42,8 @@ def getButler(instrument, rerun=None, **kwargs):
                 if not e.errno == errno.EEXIST:
                     raise
 
-    if instrument.lower() in ["hsc", "hscsim"]:
-        import lsst.obs.hscSim as obsHsc
-        mapper = obsHsc.HscSimMapper(**kwargs)
-    elif instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
-        import lsst.obs.suprimecam as obsSc
-        mapper = obsSc.SuprimecamMapper(**kwargs)
-    else:
-        raise RuntimeError("Unrecognised instrument: %s" % instrument)
 
-
+    mapper = Mapper(**kwargs)
 
     return dafPersist.ButlerFactory(mapper=mapper).create()
 
