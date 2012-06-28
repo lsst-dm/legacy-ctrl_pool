@@ -36,6 +36,9 @@ def getButler(instrument, rerun=None, **kwargs):
     elif instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
         import lsst.obs.suprimecam as obsSc
         mapper = obsSc.SuprimecamMapper(**kwargs)
+    elif instrument.lower() in ["suprimecam-mit", "sc-mit", "mit"]:
+        import lsst.obs.suprimecam as obsSc
+        mapper = obsSc.SuprimecamMapper(mit=True, **kwargs)
     else:
         raise RuntimeError("Unrecognised instrument: %s" % instrument)
 
@@ -50,6 +53,8 @@ def getNumCcds(instrument):
     if instrument.lower() in ["hsc", "hscsim"]:
         return 104
     if instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
+        return 10
+    elif instrument.lower() in ["suprimecam-mit", "mit"]:
         return 10
     raise RuntimeError("Unrecognised instrument: %s" % instrument)
 
