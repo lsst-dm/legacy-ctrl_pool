@@ -23,6 +23,7 @@ def getButler(instrument, rerun=None, **kwargs):
         import lsst.obs.suprimecam as obsSc
         Mapper = obsSc.SuprimecamMapper
         kwargs['mit'] = True
+        addDir = "SUPA"
     else:
         raise RuntimeError("Unrecognised instrument: %s" % instrument)
 
