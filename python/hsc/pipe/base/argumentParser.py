@@ -1,33 +1,18 @@
-import argparse, os, sys
+import argparse, os
 from lsst.pipe.base import ArgumentParser
 
-
-class OutputAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        if namespace.rerun:
-            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
-
-        namespace.outPath = values
-
-class RerunAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        """We can't just parse the arguments and reset namespace.outPath as the Mapper's been
-        instantiated before we get a chance"""
-
-        if namespace.outPath:
-            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
-
-        namespace.rerun = values
-        namespace.outPath = os.path.join(namespace.dataPath, "rerun", namespace.rerun)
-        if not os.path.exists(namespace.outPath):
-            os.makedirs(namespace.outPath) # should be in butler
-
-class HscArgumentParser(ArgumentParser):
+class SubaruArgumentParser(ArgumentParser):
     def __init__(self, *args, **kwargs):
-        if not 'conflict_handler' in kwargs:
-            kwargs['conflict_handler'] = 'resolve'
-        super(HscArgumentParser, self).__init__(*args, **kwargs)
-        self.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
-                          action=OutputAction)
+        super(SubaruArgumentParser, self).__init__(*args, **kwargs)
         self.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
-                          action=RerunAction)
+                          action="store", dest="rerun")
+
+    def _fixPaths(self, namespace):
+        if namespace.rerun and namespace.output:
+            argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
+        super(SubaruArgumentParser, self)._fixPaths(namespace)
+        if namespace.rerun:
+            root = os.environ.get("SUPRIME_DATA_DIR")
+            if not root:
+                argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
+            namespace.output = os.path.join(root, "rerun", namespace.rerun)
