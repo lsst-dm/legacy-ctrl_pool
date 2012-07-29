@@ -21,8 +21,7 @@ def getButler(instrument, rerun=None, **kwargs):
         addDir = "SUPA"
     elif instrument.lower() in ["suprimecam-mit", "sc-mit", "mit"]:
         import lsst.obs.suprimecam as obsSc
-        Mapper = obsSc.SuprimecamMapper
-        kwargs['mit'] = True
+        Mapper = obsSc.SuprimecamMapperMit
         addDir = "SUPA"
     else:
         raise RuntimeError("Unrecognised instrument: %s" % instrument)
@@ -35,17 +34,6 @@ def getButler(instrument, rerun=None, **kwargs):
         
         root = os.path.join(os.environ[envar], addDir)
         kwargs['root'] = root
-
-    if not kwargs.get('outputRoot', None):
-        outPath = os.path.join(root, "rerun", rerun)
-        kwargs['outputRoot'] = outPath
-        if not os.path.exists(outPath):
-            # Subject to race condition
-            try:
-                os.makedirs(outPath) # should be in butler
-            except OSError, e:
-                if not e.errno == errno.EEXIST:
-                    raise
 
     mapper = Mapper(**kwargs)
 
