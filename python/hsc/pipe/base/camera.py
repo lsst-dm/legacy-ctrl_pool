@@ -4,6 +4,24 @@ import os
 import errno
 import lsst.daf.persistence as dafPersist
 
+def parseInstrument(instrument):
+    """Return the mapper class and the intermediate directory (e.g. SUPA or HSC) ."""
+    if instrument.lower() in ["hsc", "hscsim"]:
+        import lsst.obs.hscSim as obsHsc
+        Mapper = obsHsc.HscSimMapper
+        addDir = "HSC"
+    elif instrument.lower() in ["suprimecam"]:
+        import lsst.obs.suprimecam as obsSc
+        Mapper = obsSc.SuprimecamMapper
+        addDir = "SUPA"
+    elif instrument.lower() in ["suprimecam-mit"]:
+        import lsst.obs.suprimecam as obsSc
+        Mapper = obsSc.SuprimecamMapperMit
+        addDir = "SUPA"
+    else:
+        raise RuntimeError("Unrecognised instrument: %s" % instrument)
+    return Mapper, addDir
+
 def getButler(instrument, rerun=None, **kwargs):
     """Return a butler for the appropriate instrument"""
     if rerun is None:
@@ -11,20 +29,7 @@ def getButler(instrument, rerun=None, **kwargs):
 
     envar = "SUPRIME_DATA_DIR"
 
-    if instrument.lower() in ["hsc", "hscsim"]:
-        import lsst.obs.hscSim as obsHsc
-        Mapper = obsHsc.HscSimMapper
-        addDir = "HSC"
-    elif instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
-        import lsst.obs.suprimecam as obsSc
-        Mapper = obsSc.SuprimecamMapper
-        addDir = "SUPA"
-    elif instrument.lower() in ["suprimecam-mit", "sc-mit", "mit"]:
-        import lsst.obs.suprimecam as obsSc
-        Mapper = obsSc.SuprimecamMapperMit
-        addDir = "SUPA"
-    else:
-        raise RuntimeError("Unrecognised instrument: %s" % instrument)
+    Mapper, addDir = parseInstrument(instrument)
 
     if kwargs.get('root', None):
         root = kwargs['root']
@@ -34,6 +39,10 @@ def getButler(instrument, rerun=None, **kwargs):
         
         root = os.path.join(os.environ[envar], addDir)
         kwargs['root'] = root
+
+    if not kwargs.get('outputRoot', None):
+        outPath = os.path.join(root, "rerun", rerun)
+        kwargs['outputRoot'] = outPath
 
     mapper = Mapper(**kwargs)
 
