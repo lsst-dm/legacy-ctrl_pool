@@ -1,4 +1,4 @@
-import argparse, os
+import argparse, os, getpass
 from .camera import parseInstrument
 from lsst.pipe.base import ArgumentParser
 
@@ -11,6 +11,8 @@ class SubaruArgumentParser(ArgumentParser):
     def _fixPaths(self, namespace):
         if namespace.rerun and namespace.output:
             argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
+        if namespace.rerun is None and namespace.output is None:
+            namespace.rerun = getpass.getuser()
         ArgumentParser._fixPaths(self, namespace)
         if namespace.rerun:
             root = os.environ.get("SUPRIME_DATA_DIR")

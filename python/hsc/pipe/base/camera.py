@@ -2,6 +2,7 @@
 
 import os
 import errno
+import getpass
 import lsst.daf.persistence as dafPersist
 
 def parseInstrument(instrument):
@@ -25,7 +26,7 @@ def parseInstrument(instrument):
 def getButler(instrument, rerun=None, **kwargs):
     """Return a butler for the appropriate instrument"""
     if rerun is None:
-        rerun = os.environ["LOGNAME"]
+        rerun = getpass.getuser()
 
     envar = "SUPRIME_DATA_DIR"
 
