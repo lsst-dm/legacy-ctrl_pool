@@ -18,5 +18,4 @@ class SubaruArgumentParser(ArgumentParser):
         ArgumentParser._fixPaths(self, namespace)
         if namespace.rerun:
             root = namespace.input
-            Mapper, addDir = parseInstrument(namespace.camera)
-            namespace.output = os.path.join(root, addDir, "rerun", namespace.rerun)
+            namespace.output = os.path.join(root, "rerun", namespace.rerun)
