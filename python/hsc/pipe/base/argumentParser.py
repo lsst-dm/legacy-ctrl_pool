@@ -17,6 +17,6 @@ class SubaruArgumentParser(ArgumentParser):
             namespace.rerun = getpass.getuser()
         ArgumentParser._fixPaths(self, namespace)
         if namespace.rerun:
-            root = os.environ.get("SUPRIME_DATA_DIR")
+            root = namespace.input
             Mapper, addDir = parseInstrument(namespace.camera)
             namespace.output = os.path.join(root, addDir, "rerun", namespace.rerun)
