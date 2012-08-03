@@ -107,6 +107,8 @@ def exportEnv():
     """Generate bash script to regenerate the current environment"""
     output = ""
     for key, val in os.environ.items():
+        if key in ("DISPLAY",):
+            continue
         if val.startswith("() {"):
             # This is a function.
             # "Two parentheses, a single space, and a brace"
