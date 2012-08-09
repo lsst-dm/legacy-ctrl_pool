@@ -2,30 +2,35 @@
 
 import os
 import errno
+import getpass
 import lsst.daf.persistence as dafPersist
 
-def getButler(instrument, rerun=None, **kwargs):
-    """Return a butler for the appropriate instrument"""
-    if rerun is None:
-        rerun = os.environ["LOGNAME"]
-
-    envar = "SUPRIME_DATA_DIR"
-
+def parseInstrument(instrument):
+    """Return the mapper class and the intermediate directory (e.g. SUPA or HSC) ."""
     if instrument.lower() in ["hsc", "hscsim"]:
         import lsst.obs.hscSim as obsHsc
         Mapper = obsHsc.HscSimMapper
         addDir = "HSC"
-    elif instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
+    elif instrument.lower() in ["suprimecam"]:
         import lsst.obs.suprimecam as obsSc
         Mapper = obsSc.SuprimecamMapper
         addDir = "SUPA"
-    elif instrument.lower() in ["suprimecam-mit", "sc-mit", "mit"]:
+    elif instrument.lower() in ["suprimecam-mit"]:
         import lsst.obs.suprimecam as obsSc
-        Mapper = obsSc.SuprimecamMapper
-        kwargs['mit'] = True
+        Mapper = obsSc.SuprimecamMapperMit
         addDir = "SUPA"
     else:
         raise RuntimeError("Unrecognised instrument: %s" % instrument)
+    return Mapper, addDir
+
+def getButler(instrument, rerun=None, **kwargs):
+    """Return a butler for the appropriate instrument"""
+    if rerun is None:
+        rerun = getpass.getuser()
+
+    envar = "SUPRIME_DATA_DIR"
+
+    Mapper, addDir = parseInstrument(instrument)
 
     if kwargs.get('root', None):
         root = kwargs['root']
@@ -39,13 +44,6 @@ def getButler(instrument, rerun=None, **kwargs):
     if not kwargs.get('outputRoot', None):
         outPath = os.path.join(root, "rerun", rerun)
         kwargs['outputRoot'] = outPath
-        if not os.path.exists(outPath):
-            # Subject to race condition
-            try:
-                os.makedirs(outPath) # should be in butler
-            except OSError, e:
-                if not e.errno == errno.EEXIST:
-                    raise
 
     mapper = Mapper(**kwargs)
 
