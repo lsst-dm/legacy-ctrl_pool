@@ -22,16 +22,20 @@ class PbsArgumentParser(argparse.ArgumentParser):
         self.add_argument("-o", "--output", dest="output", help="Output directory")
         self.add_argument("-N", "--dry-run", dest="dryrun", default=False, action="store_true",
                           help="Dry run?")
+        self.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
+                          help="Exec script instead of qsub?")
+        self.add_argument("--mpiexec", help="mpiexec options")
 
     def parse_args(self, *args, **kwargs):
         args = super(PbsArgumentParser, self).parse_args(*args, **kwargs)
         pbs = Pbs(outputDir=args.output, numNodes=args.nodes, numProcsPerNode=args.procs,
-                  queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun)
+                  queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun,
+                  doExec=args.doExec, mpiexec=args.mpiexec)
         return pbs, args
 
 class Pbs(object):
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
-                 dryrun=False):
+                 dryrun=False, doExec=False, mpiexec=""):
         self.outputDir = outputDir
         self.numNodes = numNodes
         self.numProcsPerNode = numProcsPerNode
@@ -39,6 +43,8 @@ class Pbs(object):
         self.jobName = jobName
         self.time = time
         self.dryrun = dryrun
+        self.doExec = doExec
+        self.mpiexec = mpiexec
 
     def create(self, command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None,
                threads=None):
@@ -88,7 +94,7 @@ class Pbs(object):
         print >>f, "eups list -s"
         print >>f, "export"
         print >>f, "cd %s" % os.getcwd()
-        print >>f, "mpiexec --verbose %s" % command
+        print >>f, "mpiexec --verbose %s %s" % (self.mpiexec, command)
         f.close()
         os.chmod(script, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return script
@@ -98,6 +104,8 @@ class Pbs(object):
         command = "qsub -V %s" % script
         if self.dryrun:
             print "Would run: %s" % command
+        elif self.doExec:
+            os.execl(script, script)
         else:
             os.system(command)
         return script
