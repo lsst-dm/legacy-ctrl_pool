@@ -24,7 +24,7 @@ class PbsArgumentParser(argparse.ArgumentParser):
                           help="Dry run?")
         self.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
                           help="Exec script instead of qsub?")
-        self.add_argument("--mpiexec", help="mpiexec options")
+        self.add_argument("--mpiexec", default="", help="mpiexec options")
 
     def parse_args(self, *args, **kwargs):
         args = super(PbsArgumentParser, self).parse_args(*args, **kwargs)
