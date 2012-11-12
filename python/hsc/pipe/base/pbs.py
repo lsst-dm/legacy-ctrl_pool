@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import re
 import os
 import os.path
 import stat
@@ -8,30 +9,75 @@ import tempfile
 import argparse
 
 
+# Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
+# http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
+_quote_pos = re.compile('(?=[^-0-9a-zA-Z_./\n])')
+def shQuote(arg):
+    r"""Quote the argument for the shell.
+
+    >>> quote('\t')
+    '\\\t'
+    >>> quote('foo bar')
+    'foo\\ bar'
+    """
+    # This is the logic emacs uses
+    if arg:
+        return _quote_pos.sub('\\\\', arg).replace('\n',"'\n'")
+    else:
+        return "''"
+def shCommandFromArgs(args):
+    """Convert a list of shell arguments to a shell command-line"""
+    return ' '.join([shQuote(a) for a in args])
+
+
 class PbsArgumentParser(argparse.ArgumentParser):
     """An argument parser to get relevant parameters for PBS."""
-    def __init__(self, *args, **kwargs):
+    def __init__(self, parent=None, *args, **kwargs):
         super(PbsArgumentParser, self).__init__(*args, **kwargs)
-        self.add_argument("-q", "--queue", dest="queue", help="PBS queue name")
-        self.add_argument("-j", "--job", dest="job", help="Job name")
-        self.add_argument("-n", "--nodes", dest="nodes", type=int, help="Number of nodes", required=True)
-        self.add_argument("-p", "--procs", dest="procs", type=int, help="Number of processors per node",
-                          required=True)
-        self.add_argument("-t", "--time", dest="time", type=float,
-                          help="Expected execution time per processor (sec)")
-        self.add_argument("-o", "--output", dest="output", help="Output directory")
-        self.add_argument("-N", "--dry-run", dest="dryrun", default=False, action="store_true",
+        self.parent = parent
+        self.add_argument("--queue", help="PBS queue name")
+        self.add_argument("--job", help="Job name")
+        self.add_argument("--nodes", type=int, default=1, help="Number of nodes")
+        self.add_argument("--procs", type=int, default=1, help="Number of processors per node")
+        self.add_argument("--time", type=float, help="Expected execution time per processor (sec)")
+        self.add_argument("--pbs-output", dest="pbsOutput", help="Output directory")
+        self.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
                           help="Dry run?")
         self.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
                           help="Exec script instead of qsub?")
         self.add_argument("--mpiexec", default="", help="mpiexec options")
 
     def parse_args(self, *args, **kwargs):
-        args = super(PbsArgumentParser, self).parse_args(*args, **kwargs)
-        pbs = Pbs(outputDir=args.output, numNodes=args.nodes, numProcsPerNode=args.procs,
-                  queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun,
-                  doExec=args.doExec, mpiexec=args.mpiexec)
-        return pbs, args
+        args, leftover = super(PbsArgumentParser, self).parse_known_args(*args, **kwargs)
+        if len(leftover) > 0:
+            # Ensure the parent can parse the leftovers
+            if self.parent is None:
+                self.error("Unrecognised arguments: %s" % leftover)
+            args.leftover = leftover
+            args.parent = self.parent.parse_args(args=leftover)
+        args.pbs = Pbs(outputDir=args.pbsOutput, numNodes=args.nodes, numProcsPerNode=args.procs,
+                       queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun,
+                       doExec=args.doExec, mpiexec=args.mpiexec)
+        return args
+
+    def formatParentUsage(self):
+        if self.parent is None:
+            return
+        usage = """
+The following options can also be added, which will be directed to the
+underlying process' ArgumentParser (%s):
+""" % type(self.parent).__name__)
+        usage += self.parent.format_usage()
+        return usage
+
+    def format_usage(self):
+        super(PbsArgumentParser, self).format_usage()
+        self.formatParentUsage()
+
+    def format_help(self):
+        super(PbsArgumentParser, self).format_help()
+        self.formatParentUsage()
+
 
 class Pbs(object):
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
