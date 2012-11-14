@@ -29,23 +29,67 @@ def shCommandFromArgs(args):
     """Convert a list of shell arguments to a shell command-line"""
     return ' '.join([shQuote(a) for a in args])
 
+class PbsArgumentInfo(object):
+    def __init__(self, action, args, kwargs, group=None):
+        self.action = action
+        self.args = args
+        self.kwargs = kwargs
+        self.group = group
+
+class PbsArgumentGroup(object):
+    def __init__(self, parser, group, title, args, kwargs):
+        self.parser = parser
+        self.group = group
+        self.title = title
+        self.args = args
+        self.kwargs = kwargs
+
+    def add_argument(self, *args, **kwargs):
+        action = self.group.add_argument(*args, **kwargs)
+        self.parser.recordArgument(action, args, kwargs, group=self.title)
 
 class PbsArgumentParser(argparse.ArgumentParser):
     """An argument parser to get relevant parameters for PBS."""
     def __init__(self, parent=None, *args, **kwargs):
-        super(PbsArgumentParser, self).__init__(*args, **kwargs)
         self.parent = parent
-        self.add_argument("--queue", help="PBS queue name")
-        self.add_argument("--job", help="Job name")
-        self.add_argument("--nodes", type=int, default=1, help="Number of nodes")
-        self.add_argument("--procs", type=int, default=1, help="Number of processors per node")
-        self.add_argument("--time", type=float, help="Expected execution time per processor (sec)")
-        self.add_argument("--pbs-output", dest="pbsOutput", help="Output directory")
-        self.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
-                          help="Dry run?")
-        self.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
-                          help="Exec script instead of qsub?")
-        self.add_argument("--mpiexec", default="", help="mpiexec options")
+        self.initArgs = args
+        self.initKwargs = kwargs
+        self.additionalGroups = {}
+        self.additionalArgs = []
+        self.defaultGroup = "Additional options"
+        self.pbsGroup = "PBS options"
+        super(PbsArgumentParser, self).__init__(*args, **kwargs)
+        self.addPbsArguments()
+
+    def addPbsArguments(self):
+        group = super(PbsArgumentParser, self).add_argument_group(self.pbsGroup)
+        group.add_argument("--queue", help="PBS queue name")
+        group.add_argument("--job", help="Job name")
+        group.add_argument("--nodes", type=int, default=1, help="Number of nodes")
+        group.add_argument("--procs", type=int, default=1, help="Number of processors per node")
+        group.add_argument("--time", type=float, help="Expected execution time per processor (sec)")
+        group.add_argument("--pbs-output", dest="pbsOutput", help="Output directory")
+        group.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
+                           help="Dry run?")
+        group.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
+                           help="Exec script instead of qsub?")
+        group.add_argument("--mpiexec", default="", help="mpiexec options")
+
+    def recordArgument(self, action, args, kwargs, group=None):
+        self.additionalArgs.append(PbsArgumentInfo(action, args, kwargs, group=group))
+
+    def add_argument(self, *args, **kwargs):
+        if not self.defaultGroup in self.additionalGroups:
+            self.add_argument_group(self.defaultGroup)
+        action = self.additionalGroups[self.defaultGroup].add_argument(*args, **kwargs)
+        self.recordArgument(action, args, kwargs)
+        return action
+
+    def add_argument_group(self, title, *args, **kwargs):
+        if not title in self.additionalGroups:
+            group = super(PbsArgumentParser, self).add_argument_group(title, *args, **kwargs)
+            self.additionalGroups[title] = PbsArgumentGroup(self, group, title, args, kwargs)
+        return self.additionalGroups[title]
 
     def parse_args(self, *args, **kwargs):
         args, leftover = super(PbsArgumentParser, self).parse_known_args(*args, **kwargs)
@@ -60,24 +104,30 @@ class PbsArgumentParser(argparse.ArgumentParser):
                        doExec=args.doExec, mpiexec=args.mpiexec)
         return args
 
-    def formatParentUsage(self):
+    def mergeWithParent(self):
         if self.parent is None:
-            return
-        usage = """
-The following options can also be added, which will be directed to the
-underlying process' ArgumentParser (%s):
-""" % type(self.parent).__name__)
-        usage += self.parent.format_usage()
-        return usage
-
-    def format_usage(self):
-        super(PbsArgumentParser, self).format_usage()
-        self.formatParentUsage()
+            return self
+        kwargs = self.initKwargs.copy()
+        parents = kwargs.pop("parents", [])
+        parents.append(self.parent)
+        merged = type(self)(*self.initArgs, parents=parents, conflict_handler="resolve", **self.initKwargs)
+        groups = {}
+        for info in self.additionalGroups.values():
+            groups[info.title] = merged.add_argument_group(info.title, *info.args, **info.kwargs)
+        for info in self.additionalArgs:
+            adder = groups[info.group].add_argument if info.group is not None else merged.add_argument
+            adder(*info.args, **info.kwargs)
+        return merged
 
     def format_help(self):
-        super(PbsArgumentParser, self).format_help()
-        self.formatParentUsage()
+        if self.parent is None:
+            return super(PbsArgumentParser, self).format_help()
+        return self.mergeWithParent().format_help()
 
+    def format_usage(self):
+        if self.parent is None:
+            return super(PbsArgumentParser, self).format_usage()
+        return self.mergeWithParent().format_usage()
 
 class Pbs(object):
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
