@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 from functools import wraps
 
 __all__ = ["thisNode", "abortOnError"]
