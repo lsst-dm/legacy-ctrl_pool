@@ -29,40 +29,21 @@ def shCommandFromArgs(args):
     """Convert a list of shell arguments to a shell command-line"""
     return ' '.join([shQuote(a) for a in args])
 
-class PbsArgumentInfo(object):
-    def __init__(self, action, args, kwargs, group=None):
-        self.action = action
-        self.args = args
-        self.kwargs = kwargs
-        self.group = group
-
-class PbsArgumentGroup(object):
-    def __init__(self, parser, group, title, args, kwargs):
-        self.parser = parser
-        self.group = group
-        self.title = title
-        self.args = args
-        self.kwargs = kwargs
-
-    def add_argument(self, *args, **kwargs):
-        action = self.group.add_argument(*args, **kwargs)
-        self.parser.recordArgument(action, args, kwargs, group=self.title)
 
 class PbsArgumentParser(argparse.ArgumentParser):
-    """An argument parser to get relevant parameters for PBS."""
-    def __init__(self, parent=None, *args, **kwargs):
-        self.parent = parent
-        self.initArgs = args
-        self.initKwargs = kwargs
-        self.additionalGroups = {}
-        self.additionalArgs = []
-        self.defaultGroup = "Additional options"
-        self.pbsGroup = "PBS options"
-        super(PbsArgumentParser, self).__init__(*args, **kwargs)
-        self.addPbsArguments()
+    """An argument parser to get relevant parameters for PBS.
 
-    def addPbsArguments(self):
-        group = super(PbsArgumentParser, self).add_argument_group(self.pbsGroup)
+    We want to be able to display the help for a 'parent' ArgumentParser
+    along with the PBS-specific options we introduce in this class, but
+    we don't want to swallow the parent (i.e., ArgumentParser(parents=[parent]))
+    because we want to save the list of arguments that this particular
+    PbsArgumentParser doesn't parse, so they can be passed on to a different
+    program (though we also want to parse them to check that they can be parsed).
+    """
+    def __init__(self, parent=None, *args, **kwargs):
+        super(PbsArgumentParser, self).__init__(*args, **kwargs)
+        self._parent = parent
+        group = self.add_argument_group("PBS options")
         group.add_argument("--queue", help="PBS queue name")
         group.add_argument("--job", help="Job name")
         group.add_argument("--nodes", type=int, default=1, help="Number of nodes")
@@ -75,59 +56,62 @@ class PbsArgumentParser(argparse.ArgumentParser):
                            help="Exec script instead of qsub?")
         group.add_argument("--mpiexec", default="", help="mpiexec options")
 
-    def recordArgument(self, action, args, kwargs, group=None):
-        self.additionalArgs.append(PbsArgumentInfo(action, args, kwargs, group=group))
-
-    def add_argument(self, *args, **kwargs):
-        if not self.defaultGroup in self.additionalGroups:
-            self.add_argument_group(self.defaultGroup)
-        action = self.additionalGroups[self.defaultGroup].add_argument(*args, **kwargs)
-        self.recordArgument(action, args, kwargs)
-        return action
-
-    def add_argument_group(self, title, *args, **kwargs):
-        if not title in self.additionalGroups:
-            group = super(PbsArgumentParser, self).add_argument_group(title, *args, **kwargs)
-            self.additionalGroups[title] = PbsArgumentGroup(self, group, title, args, kwargs)
-        return self.additionalGroups[title]
-
-    def parse_args(self, *args, **kwargs):
-        args, leftover = super(PbsArgumentParser, self).parse_known_args(*args, **kwargs)
+    def parse_args(self, args=None, namespace=None, **kwargs):
+        args, leftover = super(PbsArgumentParser, self).parse_known_args(args=args, namespace=namespace)
         if len(leftover) > 0:
-            # Ensure the parent can parse the leftovers
-            if self.parent is None:
+            # Save any leftovers for the parent
+            if self._parent is None:
                 self.error("Unrecognised arguments: %s" % leftover)
+            args.parent = self._parent.parse_args(args=leftover, **kwargs)
             args.leftover = leftover
-            args.parent = self.parent.parse_args(args=leftover)
         args.pbs = Pbs(outputDir=args.pbsOutput, numNodes=args.nodes, numProcsPerNode=args.procs,
                        queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun,
                        doExec=args.doExec, mpiexec=args.mpiexec)
         return args
 
-    def mergeWithParent(self):
-        if self.parent is None:
-            return self
-        kwargs = self.initKwargs.copy()
-        parents = kwargs.pop("parents", [])
-        parents.append(self.parent)
-        merged = type(self)(*self.initArgs, parents=parents, conflict_handler="resolve", **self.initKwargs)
-        groups = {}
-        for info in self.additionalGroups.values():
-            groups[info.title] = merged.add_argument_group(info.title, *info.args, **info.kwargs)
-        for info in self.additionalArgs:
-            adder = groups[info.group].add_argument if info.group is not None else merged.add_argument
-            adder(*info.args, **info.kwargs)
-        return merged
-
     def format_help(self):
-        if self.parent is None:
+        if self._parent is None:
             return super(PbsArgumentParser, self).format_help()
-        return self.mergeWithParent().format_help()
+        # This is digging into the "implementation detail" of the argparse ArgumentParser and HelpFormatter
+        # classes.  I don't like doing that, but they haven't given me enough hooks to do what I want to do.
+        formatter = self.formatter_class(prog=self.prog)
+
+        formatter.add_usage(self.usage, self._parent._actions + self._actions,
+                            self._parent._mutually_exclusive_groups + self._mutually_exclusive_groups)
+
+        # description
+        formatter.add_text(self.description)
+        formatter.add_text(self._parent.description)
+
+        # positionals, optionals and user-defined groups
+        for action_group in self._parent._action_groups:
+            formatter.start_section(action_group.title)
+            formatter.add_text(action_group.description)
+            formatter.add_arguments(action_group._group_actions)
+            formatter.end_section()
+        for action_group in self._action_groups:
+            formatter.start_section(action_group.title)
+            formatter.add_text(action_group.description)
+            formatter.add_arguments(action_group._group_actions)
+            formatter.end_section()
+
+        # epilog
+        formatter.add_text(self.epilog)
+        formatter.add_text(self._parent.epilog)
+
+        # determine help from format above
+        return formatter.format_help()
+
 
     def format_usage(self):
-        if self.parent is None:
-            return super(PbsArgumentParser, self).format_usage()
-        return self.mergeWithParent().format_usage()
+        if self._parent is not None:
+            prog = self._parent.prog
+            self._parent.prog = self.prog
+            usage = self._parent.format_usage()
+            self._parent.prog = prog
+            return usage
+        return super(PbsArgumentParser, self).format_usage()
+
 
 class Pbs(object):
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
