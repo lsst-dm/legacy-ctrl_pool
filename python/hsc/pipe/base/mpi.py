@@ -2,6 +2,7 @@ import os
 import sys
 import signal
 from functools import wraps
+import pbasf2 as pbasf
 from hsc.pipe.base.argumentParser import SubaruArgumentParser
 from lsst.pipe.base.cmdLineTask import CmdLineTask
 
