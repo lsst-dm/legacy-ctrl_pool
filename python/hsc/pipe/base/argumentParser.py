@@ -18,4 +18,6 @@ class SubaruArgumentParser(ArgumentParser):
         ArgumentParser._fixPaths(self, namespace)
         if namespace.rerun:
             root = namespace.input
+            while os.path.exists(os.path.join(root, "_parent")):
+                root = os.path.join(root, "_parent")
             namespace.output = os.path.join(root, "rerun", namespace.rerun)
