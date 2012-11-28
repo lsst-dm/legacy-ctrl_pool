@@ -7,7 +7,7 @@ import stat
 import sys
 import tempfile
 import argparse
-
+import lsst.afw.cameraGeom as cameraGeom
 
 # Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
 # http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
@@ -206,3 +206,20 @@ def exportEnv():
             # This is a variable.
             output += "export {key}='{val}'\n".format(key=key, val=val.replace("'", "'\"'\"'"))
     return output
+
+
+def submitPbs(TaskClass, description, command):
+    processParser = TaskClass._makeArgumentParser(add_help=False)
+    pbsParser = PbsArgumentParser(description=description, parent=processParser)
+    args = pbsParser.parse_args(config=TaskClass.ConfigClass())
+
+    numExps = len(args.parent.dataRefList)
+    if numExps == 0:
+        print "No frames provided to process"
+        exit(1)
+
+    numCcds = sum([sum([1 for ccd in cameraGeom.cast_Raft(raft)])
+                   for raft in args.parent.butler.mapper.camera])
+    command = "python %s %s" % (command, shCommandFromArgs(args.leftover))
+    args.pbs.run(command, repeats=numExps, threads=numCcds)
+
