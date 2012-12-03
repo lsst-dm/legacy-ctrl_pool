@@ -1,4 +1,4 @@
 setupRequired(daf_persistence)
 setupRequired(obs_subaru)
-setupRequired(pbasf2)
+setupOptional(pbasf2)
 pathPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)
