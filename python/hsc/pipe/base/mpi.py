@@ -45,7 +45,7 @@ class MpiArgumentParser(SubaruArgumentParser):
     """ArgumentParser that prevents all the MPI jobs from reading the registry
 
     Slaves receive the list of dataIds from the master, and set up a dummy
-    list of dataRefs (so that the ProcessExposureTask.run method is called an
+    list of dataRefs (so that the Task.run method is called an
     appropriate number of times).
     """
     @abortOnError
@@ -83,5 +83,5 @@ class MpiTask(CmdLineTask):
         All nodes execute this method.
         """
         self.butler = self.parsedCmd.butler
-        super(ProcessExposureTask, self).runDataRefList(*args, **kwargs)
+        super(MpiTask, self).runDataRefList(*args, **kwargs)
 
