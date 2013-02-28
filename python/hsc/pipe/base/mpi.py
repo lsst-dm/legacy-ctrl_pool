@@ -3,7 +3,7 @@ import sys
 import signal
 from functools import wraps
 import pbasf2 as pbasf
-from hsc.pipe.base.argumentParser import SubaruArgumentParser
+from lsst.pipe.base import ArgumentParser, DataIdContainer, TaskRunner
 from lsst.pipe.base.cmdLineTask import CmdLineTask
 
 __all__ = ["thisNode", "abortOnError"]
@@ -38,35 +38,57 @@ class DummyDataRef(object):
     def __init__(self, dataId):
         self.dataId = dataId
     def put(self, *args, **kwargs): pass # Because each node will attempt to write the config
-    def get(self, *args, **kwargs): raise AssertionError("Nodes should not be writing using this dataRef")
+    def get(self, *args, **kwargs): raise AssertionError("Nodes should not be reading using this dataRef")
 
 
-class MpiArgumentParser(SubaruArgumentParser):
-    """ArgumentParser that prevents all the MPI jobs from reading the registry
+class MpiDataIdContainer(DataIdContainer):
+    """DataIdContainer that prevents all the MPI jobs from reading the registry
 
     Slaves receive the list of dataIds from the master, and set up a dummy
-    list of dataRefs (so that the Task.run method is called an
-    appropriate number of times).
+    list of dataRefs so that the Task.run method is called an
+    appropriate number of times, which is the entire purpose.
+
+    The dataRef that the slaves receive will not be useful (a DummyDataRef), so
+    they will need to receive the dataRef over MPI from the master.
     """
     @abortOnError
-    def _makeDataRefList(self, namespace):
+    def makeDataRefList(self, namespace):
         # We don't want all the MPI jobs to go reading the registry at once
         comm = pbasf.Comm()
         rank = comm.rank
         root = 0
         if rank == root:
-            super(MpiArgumentParser, self)._makeDataRefList(namespace)
-            dummy = [DummyDataRef(dataRef.dataId) for dataRef in namespace.dataRefList]
+            super(MpiDataIdContainer, self).makeDataRefList(namespace)
+            dummy = [DummyDataRef(dataRef.dataId) for dataRef in self.refList]
         else:
             dummy = None
         # Ensure there's the same entries, except the slaves can't go reading/writing except what they're told
         if comm.size > 1:
             dummy = pbasf.Broadcast(comm, dummy, root=root)
             if rank != root:
-                namespace.dataRefList = dummy
+                self.refList = dummy
+
+
+class MpiArgumentParser(ArgumentParser):
+    """ArgumentParser that prevents all the MPI jobs from reading the registry"""
+    def add_id_argument(self, *args, **kwargs):
+        ContainerClass = kwargs.get("ContainerClass", MpiDataIdContainer)
+        super(MpiArgumentParser, self).add_id_argument(*args, ContainerClass=ContainerClass, **kwargs)
+
+
+class MpiTaskRunner(TaskRunner):
+    """Get a butler into the Task scripts"""
+    @staticmethod
+    def getTargetList(parsedCmd, **kwargs):
+        """MpiTask.run methods should receive a butler in the kwargs"""
+        return TaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
+
 
 
 class MpiTask(CmdLineTask):
+    RunnerClass = MpiTaskRunner
+    canMultiprocess = False
+
     def __init__(self, **kwargs):
         """Constructor.
 
@@ -76,12 +98,4 @@ class MpiTask(CmdLineTask):
         self.rank = self.comm.rank
         self.root = 0
         super(MpiTask, self).__init__(**kwargs)
-
-    def runDataRefList(self, *args, **kwargs):
-        """Save the butler.
-
-        All nodes execute this method.
-        """
-        self.butler = self.parsedCmd.butler
-        super(MpiTask, self).runDataRefList(*args, **kwargs)
 
