@@ -213,7 +213,7 @@ def submitPbs(TaskClass, description, command):
     pbsParser = PbsArgumentParser(description=description, parent=processParser)
     args = pbsParser.parse_args(config=TaskClass.ConfigClass())
 
-    numExps = len(args.parent.dataRefList)
+    numExps = len(args.parent.id.refList)
     if numExps == 0:
         print "No frames provided to process"
         exit(1)
