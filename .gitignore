@@ -1,0 +1,4 @@
+*.pyc
+.scon*
+ups/hscPipeBase.cfgc
+python/hsc/pipe/base/version.py
