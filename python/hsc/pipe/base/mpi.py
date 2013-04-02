@@ -99,3 +99,16 @@ class MpiTask(CmdLineTask):
         self.root = 0
         super(MpiTask, self).__init__(**kwargs)
 
+    def writeConfig(self, *args, **kwargs):
+        """Only master node should do this, to avoid race conditions.
+        Config should be identical across nodes, so no harm in this.
+        """
+        if self.rank == self.root:
+            super(MpiTask, self).writeConfig(*args, **kwargs)
+
+    def writeSchemas(self, *args, **kwargs):
+        """Only master node should do this, to avoid race conditions.
+        Schema should be identical across nodes, so no harm in this.
+        """
+        if self.rank == self.root:
+            super(MpiTask, self).writeSchemas(*args, **kwargs)
