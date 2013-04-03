@@ -58,6 +58,8 @@ class PbsArgumentParser(argparse.ArgumentParser):
 
     def parse_args(self, args=None, namespace=None, **kwargs):
         args, leftover = super(PbsArgumentParser, self).parse_known_args(args=args, namespace=namespace)
+        args.parent = None
+        args.leftover = None
         if len(leftover) > 0:
             # Save any leftovers for the parent
             if self._parent is None:
@@ -70,38 +72,25 @@ class PbsArgumentParser(argparse.ArgumentParser):
         return args
 
     def format_help(self):
-        if self._parent is None:
-            return super(PbsArgumentParser, self).format_help()
-        # This is digging into the "implementation detail" of the argparse ArgumentParser and HelpFormatter
-        # classes.  I don't like doing that, but they haven't given me enough hooks to do what I want to do.
-        formatter = self.formatter_class(prog=self.prog)
+        text = """This is a script for PBS submission of a wrapped script.
 
-        formatter.add_usage(self.usage, self._parent._actions + self._actions,
-                            self._parent._mutually_exclusive_groups + self._mutually_exclusive_groups)
+Use this program name and ignore that for the wrapped script (it will be
+passed on to PBS).  Arguments for *both* the PBS wrapper script or the
+wrapped script are valid (if it is required for the wrapped script, it
+is required for the wrapper as well).
 
-        # description
-        formatter.add_text(self.description)
-        formatter.add_text(self._parent.description)
+*** PBS submission wrapper:
 
-        # positionals, optionals and user-defined groups
-        for action_group in self._parent._action_groups:
-            formatter.start_section(action_group.title)
-            formatter.add_text(action_group.description)
-            formatter.add_arguments(action_group._group_actions)
-            formatter.end_section()
-        for action_group in self._action_groups:
-            formatter.start_section(action_group.title)
-            formatter.add_text(action_group.description)
-            formatter.add_arguments(action_group._group_actions)
-            formatter.end_section()
+"""
+        text += super(PbsArgumentParser, self).format_help()
+        if self._parent is not None:
+            text += """
 
-        # epilog
-        formatter.add_text(self.epilog)
-        formatter.add_text(self._parent.epilog)
+*** Wrapped script:
 
-        # determine help from format above
-        return formatter.format_help()
-
+"""
+            text += self._parent.format_help()
+        return text
 
     def format_usage(self):
         if self._parent is not None:
@@ -213,7 +202,7 @@ def submitPbs(TaskClass, description, command):
     pbsParser = PbsArgumentParser(description=description, parent=processParser)
     args = pbsParser.parse_args(config=TaskClass.ConfigClass())
 
-    numExps = len(args.parent.id.refList)
+    numExps = len(args.parent.id.refList if args.parent is not None else [])
     if numExps == 0:
         print "No frames provided to process"
         exit(1)
