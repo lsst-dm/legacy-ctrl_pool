@@ -2,7 +2,6 @@ import os
 import sys
 import signal
 from functools import wraps
-import pbasf2 as pbasf
 from lsst.pipe.base import ArgumentParser, DataIdContainer, TaskRunner
 from lsst.pipe.base.cmdLineTask import CmdLineTask
 
@@ -54,7 +53,8 @@ class MpiDataIdContainer(DataIdContainer):
     @abortOnError
     def makeDataRefList(self, namespace):
         # We don't want all the MPI jobs to go reading the registry at once
-        comm = pbasf.Comm()
+        import pbasf2
+        comm = pbasf2.Comm()
         rank = comm.rank
         root = 0
         if rank == root:
@@ -64,7 +64,7 @@ class MpiDataIdContainer(DataIdContainer):
             dummy = None
         # Ensure there's the same entries, except the slaves can't go reading/writing except what they're told
         if comm.size > 1:
-            dummy = pbasf.Broadcast(comm, dummy, root=root)
+            dummy = pbasf2.Broadcast(comm, dummy, root=root)
             if rank != root:
                 self.refList = dummy
 
@@ -94,10 +94,17 @@ class MpiTask(CmdLineTask):
 
         All nodes execute this method.
         """
-        self.comm = pbasf.Comm()
-        self.rank = self.comm.rank
         self.root = 0
         super(MpiTask, self).__init__(**kwargs)
+
+    @property
+    def comm(self):
+        import pbasf2
+        return pbasf2.Comm()
+
+    @property
+    def rank(self):
+        return self.comm.rank
 
     def writeConfig(self, *args, **kwargs):
         """Only master node should do this, to avoid race conditions.
