@@ -30,7 +30,13 @@ def abortOnError(func):
             mpi.COMM_WORLD.Abort(1)
     return wrapper
 
+def getComm():
+    """Return an MPI communicator
 
+    We use a PBASF2 communicator, because that disables busy-waiting.
+    """
+    import pbasf2
+    return pbasf2.Comm()
 
 class DummyDataRef(object):
     """Quacks like a ButlerDataRef (where required), but is picklable."""
@@ -91,8 +97,7 @@ class MpiTask(CmdLineTask):
 
     @property
     def comm(self):
-        import pbasf2
-        return pbasf2.Comm()
+        return getComm()
 
     @property
     def rank(self):
