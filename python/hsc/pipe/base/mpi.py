@@ -76,17 +76,9 @@ class MpiArgumentParser(ArgumentParser):
         super(MpiArgumentParser, self).add_id_argument(*args, ContainerClass=ContainerClass, **kwargs)
 
 
-class MpiTaskRunner(TaskRunner):
-    """Get a butler into the Task scripts"""
-    @staticmethod
-    def getTargetList(parsedCmd, **kwargs):
-        """MpiTask.run methods should receive a butler in the kwargs"""
-        return TaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
-
 
 
 class MpiTask(CmdLineTask):
-    RunnerClass = MpiTaskRunner
     canMultiprocess = False
 
     def __init__(self, **kwargs):
