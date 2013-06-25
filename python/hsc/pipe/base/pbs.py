@@ -8,6 +8,7 @@ import sys
 import tempfile
 import argparse
 import lsst.afw.cameraGeom as cameraGeom
+from lsst.pipe.base import CmdLineTask
 
 # Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
 # http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
@@ -48,7 +49,8 @@ class PbsArgumentParser(argparse.ArgumentParser):
         group.add_argument("--job", help="Job name")
         group.add_argument("--nodes", type=int, default=1, help="Number of nodes")
         group.add_argument("--procs", type=int, default=1, help="Number of processors per node")
-        group.add_argument("--time", type=float, help="Expected execution time per processor (sec)")
+        group.add_argument("--time", type=float, default=1000,
+                           help="Expected execution time per element (sec)")
         group.add_argument("--pbs-output", dest="pbsOutput", help="Output directory")
         group.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
                            help="Dry run?")
@@ -56,7 +58,7 @@ class PbsArgumentParser(argparse.ArgumentParser):
                            help="Exec script instead of qsub?")
         group.add_argument("--mpiexec", default="", help="mpiexec options")
 
-    def parse_args(self, args=None, namespace=None, **kwargs):
+    def parse_args(self, config, args=None, namespace=None, **kwargs):
         args, leftover = super(PbsArgumentParser, self).parse_known_args(args=args, namespace=namespace)
         args.parent = None
         args.leftover = None
@@ -64,7 +66,7 @@ class PbsArgumentParser(argparse.ArgumentParser):
             # Save any leftovers for the parent
             if self._parent is None:
                 self.error("Unrecognised arguments: %s" % leftover)
-            args.parent = self._parent.parse_args(args=leftover, **kwargs)
+            args.parent = self._parent.parse_args(config, args=leftover, **kwargs)
             args.leftover = leftover
         args.pbs = Pbs(outputDir=args.pbsOutput, numNodes=args.nodes, numProcsPerNode=args.procs,
                        walltime=args.time, queue=args.queue, jobName=args.job, dryrun=args.dryrun,
@@ -199,7 +201,7 @@ def exportEnv():
 def submitPbs(TaskClass, description, command):
     processParser = TaskClass._makeArgumentParser(add_help=False)
     pbsParser = PbsArgumentParser(description=description, parent=processParser)
-    args = pbsParser.parse_args(config=TaskClass.ConfigClass())
+    args = pbsParser.parse_args(TaskClass.ConfigClass())
 
     numExps = len(args.parent.id.refList if args.parent is not None else [])
     if numExps == 0:
@@ -215,14 +217,14 @@ def submitPbs(TaskClass, description, command):
 class PbsCmdLineTask(CmdLineTask):
     @classmethod
     def parseAndSubmit(cls, args=None, **kwargs):
-        taskParser = cls._makeArgumentParser(doPbs=True)
+        taskParser = cls._makeArgumentParser(doPbs=True, add_help=False)
         pbsParser = PbsArgumentParser(parent=taskParser)
-        pbsArgs = pbsParser.parse_args(args=args, **kwargs)
+        pbsArgs = pbsParser.parse_args(config=cls.ConfigClass(), args=args, **kwargs)
 
         walltime = cls.pbsWallTime(pbsArgs.time, pbsArgs.parent, pbsArgs.nodes)
 
         command = cls.pbsCommand(pbsArgs)
-        pbsArgs.pbs.run(command, time=walltime)
+        pbsArgs.pbs.run(command, walltime=walltime)
 
     @classmethod
     def pbsWallTime(cls, time, parsedCmd, numNodes):

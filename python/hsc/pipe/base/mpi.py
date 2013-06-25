@@ -78,7 +78,7 @@ class MpiArgumentParser(ArgumentParser):
                         import pbasf2
                         dummy = pbasf2.Broadcast(comm, dummy, root=root)
                         if rank != root:
-                    self.refList = dummy
+                            self.refList = dummy
             ContainerClass = MpiDataIdContainer
         super(MpiArgumentParser, self).add_id_argument(*args, ContainerClass=ContainerClass, **kwargs)
 
