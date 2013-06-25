@@ -67,7 +67,7 @@ class PbsArgumentParser(argparse.ArgumentParser):
             args.parent = self._parent.parse_args(args=leftover, **kwargs)
             args.leftover = leftover
         args.pbs = Pbs(outputDir=args.pbsOutput, numNodes=args.nodes, numProcsPerNode=args.procs,
-                       queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun,
+                       walltime=args.time, queue=args.queue, jobName=args.job, dryrun=args.dryrun,
                        doExec=args.doExec, mpiexec=args.mpiexec)
         return args
 
@@ -103,22 +103,22 @@ is required for the wrapper as well).
 
 
 class Pbs(object):
-    def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
+    def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, walltime=None,
                  dryrun=False, doExec=False, mpiexec=""):
         self.outputDir = outputDir
         self.numNodes = numNodes
         self.numProcsPerNode = numProcsPerNode
         self.queue = queue
         self.jobName = jobName
-        self.time = time
+        self.walltime = walltime
         self.dryrun = dryrun
         self.doExec = doExec
         self.mpiexec = mpiexec
 
-    def create(self, command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None,
+    def create(self, command, walltime=None, numNodes=None, numProcsPerNode=None, jobName=None,
                threads=None):
-        if time is None:
-            time = self.time
+        if walltime is None:
+            walltime = self.walltime
         if numNodes is None:
             numNodes = self.numNodes
         if numProcsPerNode is None:
@@ -145,9 +145,8 @@ class Pbs(object):
         print >>f, "#!/bin/bash"
         print >>f, "#   Post this job with `qsub -V $0'"
         print >>f, "#PBS -l nodes=%d:ppn=%d" % (numNodes, numProcsPerNode)
-        if time is not None:
-            wallTime = repeats * time / threads
-            print >>f, "#PBS -l walltime=%d" % wallTime
+        if walltime is not None:
+            print >>f, "#PBS -l walltime=%d" % walltime
         if self.outputDir is not None:
             print >>f, "#PBS -o %s" % self.outputDir
         print >>f, "#PBS -N %s" % jobName
@@ -212,3 +211,39 @@ def submitPbs(TaskClass, description, command):
     command = "python %s %s" % (command, shCommandFromArgs(args.leftover))
     args.pbs.run(command, repeats=numExps, threads=numCcds)
 
+
+class PbsCmdLineTask(CmdLineTask):
+    @classmethod
+    def parseAndSubmit(cls, args=None, **kwargs):
+        taskParser = cls._makeArgumentParser(doPbs=True)
+        pbsParser = PbsArgumentParser(parent=taskParser)
+        pbsArgs = pbsParser.parse_args(args=args, **kwargs)
+
+        walltime = cls.pbsWallTime(pbsArgs.time, pbsArgs.parent, pbsArgs.nodes)
+
+        command = cls.pbsCommand(pbsArgs)
+        pbsArgs.pbs.run(command, time=walltime)
+
+    @classmethod
+    def pbsWallTime(cls, time, parsedCmd, numNodes):
+        """Return walltime request for PBS
+
+        Subclasses should override if the walltime should be calculated
+        differently (e.g., addition of some serial time).
+
+        @param time: Requested time per iteration
+        @param parsedCmd: Results of argument parsing
+        @param numNodes: Total number of nodes for processing
+        """
+        numTargets = len(cls.RunnerClass.getTargetList(parsedCmd))
+        return time*numTargets/numNodes
+
+    @classmethod
+    def pbsCommand(cls, args):
+        """Return command to run CmdLineTask
+
+        @param args: Parsed PBS arguments (from PbsArgumentParser)
+        """
+        module = cls.__module__
+        return "python -c 'import %s; %s.%s.parseAndRun()' %s" % (module, module, cls.__name__,
+                                                                  shCommandFromArgs(args.leftover))
