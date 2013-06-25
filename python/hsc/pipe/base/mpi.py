@@ -48,7 +48,7 @@ class DummyDataRef(object):
 class MpiArgumentParser(ArgumentParser):
     """ArgumentParser that prevents all the MPI jobs from reading the registry"""
     def add_id_argument(self, *args, **kwargs):
-        ContainerClass = kwargs.get("ContainerClass", DataIdContainer)
+        ContainerClass = kwargs.pop("ContainerClass", DataIdContainer)
         rootOnly = kwargs.pop("rootOnly", True) # Are data references to be only defined on the root?
         if rootOnly:
             class MpiDataIdContainer(ContainerClass):
@@ -68,17 +68,18 @@ class MpiArgumentParser(ArgumentParser):
                     rank = comm.rank
                     root = 0
                     if rank == root:
+                        original = set(self.__dict__.keys())
                         super(MpiDataIdContainer, self).makeDataRefList(namespace)
-                        dummy = [DummyDataRef(dataRef.dataId) for dataRef in self.refList]
-                    else:
-                        dummy = None
+                        transfer = dict((k, getattr(self, k)) for k in set(self.__dict__.keys()) - original)
+                        transfer["refList"] = [DummyDataRef(dataRef.dataId) for dataRef in self.refList]
                     # Ensure there's the same number of entries, however the slaves can't
                     # go reading/writing except what they're told
                     if comm.size > 1:
                         import pbasf2
-                        dummy = pbasf2.Broadcast(comm, dummy, root=root)
-                        if rank != root:
-                            self.refList = dummy
+                        transfer = pbasf2.Broadcast(comm, transfer if rank == root else None, root=root)
+                    if rank != root:
+                        for k,v in transfer.items():
+                            setattr(self, k, v)
             ContainerClass = MpiDataIdContainer
         super(MpiArgumentParser, self).add_id_argument(*args, ContainerClass=ContainerClass, **kwargs)
 
@@ -179,6 +180,7 @@ class MpiSimpleMapFunc(object):
             pending = set(range(self.size))
             pending.remove(self.root)
             while len(pending) > 0:
+                import mpi4py.MPI as mpi
                 node, outputList = self.comm.recv(status=mpi.Status(), tag=1, source=mpi.ANY_SOURCE)
                 assert len(resultList) == len(outputList)
                 resultList = [out if self.doProcess(i, node) else res for i,(out,res) in
@@ -186,7 +188,7 @@ class MpiSimpleMapFunc(object):
                 pending.remove(node)
             return resultList
         else:
-            self.comm.send(dest=self.root, obj=(self.rank, output), tag=1)
+            self.comm.send(dest=self.root, obj=(self.rank, resultList), tag=1)
             return [None]*len(resultList)
 
     def __call__(self, func, argList):
@@ -229,12 +231,8 @@ class MpiMultiplexTaskRunner(TaskRunner):
 
         @return a list of results returned by __call__; see __call__ for details.
         """
-        if self.numProcesses > 1:
-            mapFunc = MpiQueuedMapFunc(getComm())
-        else:
-            mapFunc = map
-
         if self.precall(parsedCmd):
+            mapFunc = MpiSimpleMapFunc(getComm())
             resultList = mapFunc(self, self.getTargetList(parsedCmd))
         else:
             resultList = None
