@@ -176,19 +176,19 @@ class MpiSimpleMapFunc(object):
         @param resultList: List of results from scatter processing
         @return Gathered list of results (root) or fake list of results (worker)
         """
+        self.comm.Barrier()
         if self.rank == self.root:
-            pending = set(range(self.size))
-            pending.remove(self.root)
-            while len(pending) > 0:
-                import mpi4py.MPI as mpi
-                node, outputList = self.comm.recv(status=mpi.Status(), tag=1, source=mpi.ANY_SOURCE)
+            import mpi4py.MPI as mpi
+            for node in range(self.size):
+                if node == self.root:
+                    continue
+                outputList = self.comm.recv(status=mpi.Status(), tag=1, source=node)
                 assert len(resultList) == len(outputList)
                 resultList = [out if self.doProcess(i, node) else res for i,(out,res) in
                               enumerate(zip(outputList, resultList))]
-                pending.remove(node)
             return resultList
         else:
-            self.comm.send(dest=self.root, obj=(self.rank, resultList), tag=1)
+            self.comm.send(dest=self.root, obj=resultList, tag=1)
             return [None]*len(resultList)
 
     def __call__(self, func, argList):
@@ -225,9 +225,7 @@ class MpiQueuedMapFunc(object):
 
 class MpiMultiplexTaskRunner(TaskRunner):
     def run(self, parsedCmd):
-        """Run the task on all targets.
-
-        The task is run under MPI if numProcesses > 1; otherwise processing is serial.
+        """Run the task under MPI on all targets.
 
         @return a list of results returned by __call__; see __call__ for details.
         """
