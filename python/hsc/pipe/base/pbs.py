@@ -58,7 +58,7 @@ class PbsArgumentParser(argparse.ArgumentParser):
                            help="Exec script instead of qsub?")
         group.add_argument("--mpiexec", default="", help="mpiexec options")
 
-    def parse_args(self, config, args=None, namespace=None, **kwargs):
+    def parse_args(self, config=None, args=None, namespace=None, **kwargs):
         args, leftover = super(PbsArgumentParser, self).parse_known_args(args=args, namespace=namespace)
         args.parent = None
         args.leftover = None
