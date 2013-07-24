@@ -103,6 +103,11 @@ class MpiTask(CmdLineTask):
     def rank(self):
         return self.comm.rank
 
+    @abortOnError
+    def parseAndRun(self, *args, **kwargs):
+        """Merely wraps everything up, so we're not left hanging forever if something fails"""
+        super(MpiTask, self).parseAndRun(*args, **kwargs)
+
     def writeConfig(self, *args, **kwargs):
         """Only master node should do this, to avoid race conditions.
         Config should be identical across nodes, so no harm in this.
@@ -221,6 +226,7 @@ class MpiQueuedMapFunc(object):
         """
         import pbasf2
         return pbasf2.ScatterJob(self.comm, func, argList, root=self.root)
+
 
 
 class MpiMultiplexTaskRunner(TaskRunner):
