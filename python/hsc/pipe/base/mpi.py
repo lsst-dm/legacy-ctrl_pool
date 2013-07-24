@@ -103,6 +103,7 @@ class MpiTask(CmdLineTask):
     def rank(self):
         return self.comm.rank
 
+    @classmethod
     @abortOnError
     def parseAndRun(self, *args, **kwargs):
         """Merely wraps everything up, so we're not left hanging forever if something fails"""
