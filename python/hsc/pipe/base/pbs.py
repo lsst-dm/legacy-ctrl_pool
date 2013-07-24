@@ -7,6 +7,7 @@ import stat
 import sys
 import tempfile
 import argparse
+import lsst.pex.logging as pexLog
 import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
 
@@ -220,7 +221,8 @@ class PbsCmdLineTask(CmdLineTask):
         """Add node-specific destination to log"""
         job = kwargs.pop("job", None)
         if job is not None:
-            pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (os.uname()[1], os.getpid())
+            machine = os.uname()[1].split(".")[0]
+            pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (machine, os.getpid()))
         super(PbsCmdLineTask, self).parseAndRun(*args, **kwargs)
 
     @classmethod
@@ -255,6 +257,6 @@ class PbsCmdLineTask(CmdLineTask):
         @param args: Parsed PBS arguments (from PbsArgumentParser)
         """
         module = cls.__module__
-        return "python -c 'import %s; %s.%s.parseAndRun(job=%s)' %s" % (module, module, cls.__name__,
-                                                                        args.job,
-                                                                        shCommandFromArgs(args.leftover))
+        return "python -c 'import %s; %s.%s.parseAndRun(job=\"%s\")' %s" % (module, module, cls.__name__,
+                                                                            args.job,
+                                                                            shCommandFromArgs(args.leftover))
