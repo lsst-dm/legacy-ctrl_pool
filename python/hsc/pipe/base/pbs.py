@@ -216,6 +216,14 @@ def submitPbs(TaskClass, description, command):
 
 class PbsCmdLineTask(CmdLineTask):
     @classmethod
+    def parseAndRun(self, *args, **kwargs):
+        """Add node-specific destination to log"""
+        job = kwargs.pop("job", None)
+        if job is not None:
+            pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (os.uname()[1], os.getpid())
+        super(PbsCmdLineTask, self).parseAndRun(*args, **kwargs)
+
+    @classmethod
     def parseAndSubmit(cls, args=None, **kwargs):
         taskParser = cls._makeArgumentParser(doPbs=True, add_help=False)
         pbsParser = PbsArgumentParser(parent=taskParser)
@@ -247,5 +255,6 @@ class PbsCmdLineTask(CmdLineTask):
         @param args: Parsed PBS arguments (from PbsArgumentParser)
         """
         module = cls.__module__
-        return "python -c 'import %s; %s.%s.parseAndRun()' %s" % (module, module, cls.__name__,
-                                                                  shCommandFromArgs(args.leftover))
+        return "python -c 'import %s; %s.%s.parseAndRun(job=%s)' %s" % (module, module, cls.__name__,
+                                                                        args.job,
+                                                                        shCommandFromArgs(args.leftover))
