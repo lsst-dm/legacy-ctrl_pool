@@ -103,6 +103,13 @@ class MpiTask(CmdLineTask):
     def rank(self):
         return self.comm.rank
 
+    def precall(self, parsedCmd):
+        """Abort if we have problems writing config/schema"""
+        if not super(MpiTask, self).precall(parsedCmd):
+            import mpi4py.MPI as mpi
+            mpi.COMM_WORLD.Abort(1)
+        return True
+
     @classmethod
     @abortOnError
     def parseAndRun(self, *args, **kwargs):
