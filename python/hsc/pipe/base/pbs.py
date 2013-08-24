@@ -231,13 +231,13 @@ class PbsCmdLineTask(CmdLineTask):
         pbsParser = PbsArgumentParser(parent=taskParser)
         pbsArgs = pbsParser.parse_args(config=cls.ConfigClass(), args=args, **kwargs)
 
-        walltime = cls.pbsWallTime(pbsArgs.time, pbsArgs.parent, pbsArgs.nodes)
+        walltime = cls.pbsWallTime(pbsArgs.time, pbsArgs.parent, pbsArgs.nodes, pbsArgs.procs)
 
         command = cls.pbsCommand(pbsArgs)
         pbsArgs.pbs.run(command, walltime=walltime)
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes):
+    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
         """Return walltime request for PBS
 
         Subclasses should override if the walltime should be calculated
@@ -245,10 +245,11 @@ class PbsCmdLineTask(CmdLineTask):
 
         @param time: Requested time per iteration
         @param parsedCmd: Results of argument parsing
-        @param numNodes: Total number of nodes for processing
+        @param numNodes: Number of nodes for processing
+        @param numProcs: Number of processors per node
         """
         numTargets = len(cls.RunnerClass.getTargetList(parsedCmd))
-        return time*numTargets/numNodes
+        return time*numTargets/(numNodes*numProcs)
 
     @classmethod
     def pbsCommand(cls, args):
