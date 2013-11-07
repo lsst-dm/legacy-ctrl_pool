@@ -7,7 +7,8 @@ import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
 
-__all__ = ["Comm", "Pool", "startPool",]
+__all__ = ["Comm", "Pool", "startPool", "abortOnError",]
+
 
 def abortOnError(func):
     """Decorator to throw an MPI abort on an unhandled exception"""
