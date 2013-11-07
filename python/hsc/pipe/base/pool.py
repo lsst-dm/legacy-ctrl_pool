@@ -7,7 +7,7 @@ import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
 
-__all__ = ["Comm", "Tags", "Pool", "abortOnError",]
+__all__ = ["Comm", "Tags", "startPool", "abortOnError",]
 
 def abortOnError(func):
     """Decorator to throw an MPI abort on an unhandled exception"""
@@ -143,26 +143,7 @@ class PoolMaster(object):
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
-    def __new__(cls, root=0):
-        """Create pool
-
-        Returns a PoolMaster object only for the master node.
-        Slave nodes are run and then killed.
-
-        @param comm: MPI communicator
-        @param root: Rank of root/master node
-        """
-        comm = Comm()
-        if comm.rank == root:
-            pool = super(PoolMaster, cls).__new__(cls, comm, root)
-            pool.comm = comm
-            return pool
-        pool = PoolSlave(comm, root=root)
-        pool.run()
-        del pool # Required to prevent segmentation fault on exit
-        exit()
-
-    def __init__(self, root=0):
+    def __init__(self, comm, root=0):
         """Constructor
 
         Only the master node should instantiate this.
@@ -170,16 +151,27 @@ class PoolMaster(object):
         @param comm: MPI communicator
         @param root: Rank of root/master node (this one)
         """
-        assert self.comm, "Enforced by __new__"
+        self.comm = comm
         self.rank = self.comm.rank
         assert self.rank == root, "Enforced by __new__"
         self.size = self.comm.size
-        self.cache = {}
+        self._cache = {}
+        self._store = {}
         self.debugger = Debugger()
 
     def __del__(self):
         """Ensure slaves exit when we're done"""
         self.exit()
+
+    def _getCache(self, index):
+        """Retrieve cache for particular data
+
+        The cache is updated with the contents of the store.
+        """
+        if index not in self._cache:
+            self._cache[index] = Cache(self.comm)
+        self._cache[index].__dict__.update(self._store)
+        return self._cache[index]
 
     def log(self, msg, *args):
         """Log a debugging message"""
@@ -202,10 +194,10 @@ class PoolMaster(object):
 
         Each slave applies the function to the data they're provided.
         The slaves may optionally be passed a cache instance, which
-        they can store data in for subsequent executions (to ensure
+        they can use to store data for subsequent executions (to ensure
         subsequent data is distributed in the same pattern as before,
-        use the 'scatterToPrevious' method).  The cache can be cleared
-        by calling the 'clearCache' method.
+        use the 'scatterToPrevious' method).  The cache also contains
+        data that has been stored on the slaves.
 
         The 'func' signature should be func(cache, data, *args) if
         'passCache' is true; otherwise func(data, *args).
@@ -267,8 +259,7 @@ class PoolMaster(object):
         @return list of results from applying 'func' to dataList
         """
         if passCache:
-            self.cache.update((i, Cache(self.comm)) for i in range(len(dataList)) if i not in self.cache)
-            return [func(self.cache[i], data, *args) for i, data in enumerate(dataList)]
+            return [func(self._getCache[i], data, *args) for i, data in enumerate(dataList)]
         return [func(data, *args) for data in dataList]
 
     @abortOnError
@@ -281,8 +272,8 @@ class PoolMaster(object):
         The slaves may optionally be passed a cache instance, which
         they can store data in for subsequent executions (to ensure
         subsequent data is distributed in the same pattern as before,
-        use the 'scatterToPrevious' method).  The cache can be cleared
-        by calling the 'clearCache' method.
+        use the 'scatterToPrevious' method).  The cache also contains
+        data that has been stored on the slaves.
 
         The 'func' signature should be func(cache, data, *args) if
         'passCache' is true; otherwise func(data, *args).
@@ -336,9 +327,7 @@ class PoolMaster(object):
         for index, data in distribution[self.rank]:
             self.log("running job", index)
             if passCache:
-                if index not in self.cache:
-                    self.cache[index] = Cache(self.comm)
-                result = func(self.cache[index], data, *args)
+                result = func(self._getCache(index), data, *args)
             else:
                 result = func(data, *args)
             resultList[index] = result
@@ -357,7 +346,6 @@ class PoolMaster(object):
 
         self.log("done")
         return resultList
-
 
     @abortOnError
     def scatterToPrevious(self, func, dataList, *args):
@@ -378,7 +366,7 @@ class PoolMaster(object):
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return [func(self.cache[i], data, *args) for i, data in enumerate(dataList)]
+            return [func(self._getCache[i], data, *args) for i, data in enumerate(dataList)]
 
         self.command("scatterToPrevious")
 
@@ -414,12 +402,49 @@ class PoolMaster(object):
         return resultList
 
     @abortOnError
+    def storeSet(self, name, value):
+        """Store data on slave
+
+        The data is made available to functions through the cache. The
+        stored data differs from the cache in that it is identical for
+        all operations, whereas the cache is specific to the data being
+        operated upon.
+
+        @param name: name of data to store
+        @param value: value to store
+        """
+        self._store[name] = value
+        self.command("storeSet")
+        self.log("give data")
+        self.comm.broadcast((name, value), root=self.rank)
+        self.log("done")
+
+    @abortOnError
+    def storeDel(self, *nameList):
+        """Delete stored data on slave"""
+        for name in nameList:
+            del self._store[name]
+        self.command("storeDel")
+        self.log("tell names")
+        self.comm.broadcast(nameList, root=self.rank)
+        self.log("done")
+
+    @abortOnError
+    def storeClear(self):
+        """Reset data store
+
+        Slave data stores are reset.
+        """
+        self._store = {}
+        self.command("storeClear")
+
+    @abortOnError
     def clearCache(self):
         """Reset cache
 
         Slave caches are reset.
         """
-        self.cache = {}
+        self._cache = {}
         self.command("clearCache")
 
     def exit(self):
@@ -440,12 +465,23 @@ class PoolSlave(object):
         self.rank = comm.rank
         self.root = root
         self.size = comm.size
-        self.cache = {}
+        self._cache = {}
+        self._store = {}
         self.debugger = Debugger()
 
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Slave %d" % self.rank, msg, *args)
+
+    def _getCache(self, index):
+        """Retrieve cache for particular data
+
+        The cache is updated with the contents of the store.
+        """
+        if index not in self._cache:
+            self._cache[index] = Cache(self.comm)
+        self._cache[index].__dict__.update(self._store)
+        return self._cache[index]
 
     @abortOnError
     def run(self):
@@ -455,7 +491,8 @@ class PoolSlave(object):
         This exits when a command returns a true value.
         """
         menu = dict((cmd, getattr(self, cmd)) for cmd in ("scatterGather", "scatterGatherNoBalance",
-                                                          "scatterToPrevious", "clearCache", "exit",))
+                                                          "scatterToPrevious", "storeSet", "storeDel",
+                                                          "storeClear", "clearCache", "exit",))
         self.log("waiting for command from", self.root)
         command = self.comm.broadcast(None, root=self.root)
         self.log("command", command)
@@ -476,9 +513,7 @@ class PoolSlave(object):
             index, data = job
             self.log("running job")
             if passCache:
-                if index not in self.cache:
-                    self.cache[index] = Cache(self.comm)
-                result = func(self.cache[index], data, *args)
+                result = func(self._getCache(index), data, *args)
             else:
                 result = func(data, *args)
             self.comm.send((index, result), self.root, tag=tags.result)
@@ -498,9 +533,7 @@ class PoolSlave(object):
         for index, data in queue:
             self.log("running job", index)
             if passCache:
-                if index not in self.cache:
-                    self.cache[index] = Cache(self.comm)
-                result = func(self.cache[index], data, *args)
+                result = func(self._getCache(index), data, *args)
             else:
                 result = func(data, *args)
             resultList.append(result)
@@ -512,7 +545,7 @@ class PoolSlave(object):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
         tags, func, args = self.comm.broadcast(None, root=self.root)
-        queue = self.cache.keys()
+        queue = self._cache.keys()
         index = queue.pop(0) if queue else -1
         self.log("request job", index)
         self.comm.gather(index, root=self.root)
@@ -521,7 +554,7 @@ class PoolSlave(object):
 
         while index >= 0:
             self.log("running job")
-            result = func(self.cache[index], data, *args)
+            result = func(self._getCache(index), data, *args)
             self.log("pending", queue)
             nextIndex = queue.pop(0) if queue else -1
             self.comm.send((index, result, nextIndex), self.root, tag=tags.result)
@@ -531,13 +564,56 @@ class PoolSlave(object):
 
         self.log("done")
 
+    def storeSet(self):
+        """Set value in store"""
+        name, value = self.comm.broadcast(None, root=self.root)
+        self.log("storing", name, value)
+        self._store[name] = value
+
+    def storeDel(self):
+        """Delete value in store"""
+        nameList = self.comm.broadcast(None, root=self.root)
+        self.log("deleting", nameList)
+        for name in nameList:
+            del self._store[name]
+
+    def storeClear(self):
+        """Clear stored data"""
+        self._store = {}
+
     def clearCache(self):
         """Reset cache"""
-        self.cache = {}
+        self._cache = {}
 
     def exit(self):
         """Allow exit from loop in 'run'"""
         return True
 
-Pool = PoolMaster
+def startPool(comm=Comm(), root=0, killSlaves=True):
+    """
+    Returns a PoolMaster object for the master node.
+    Slave nodes are run and then optionally killed.
 
+    If you elect not to kill the slaves, note that they
+    will emerge at the point this function was called,
+    which is likely very different from the point the
+    master is at, so it will likely be necessary to put
+    in some rank dependent code (e.g., look at the 'rank'
+    attribute of the returned pools).
+
+    Note that the pool objects should be deleted (either
+    by going out of scope or explicit 'del') before program
+    termination to avoid a segmentation fault.
+
+    @param comm: MPI communicator
+    @param root: Rank of root/master node
+    @param killSlaves: Kill slaves on completion?
+        """
+    if comm.rank == root:
+        return PoolMaster(comm, root=root)
+    pool = PoolSlave(comm, root=root)
+    pool.run()
+    if killSlaves:
+        del pool # Required to prevent segmentation fault on exit
+        exit()
+    return pool
