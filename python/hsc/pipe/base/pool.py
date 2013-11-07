@@ -136,32 +136,22 @@ class Debugger(object):
                 self.out.write(" %s" % arg)
             self.out.write("\n")
 
-class PoolMaster(object):
-    """Master node instance of MPI process pool
+
+class PoolNode(object):
+    """Node in MPI process pool
 
     WARNING: You should not let a pool instance hang around at program
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
     def __init__(self, comm, root=0):
-        """Constructor
-
-        Only the master node should instantiate this.
-
-        @param comm: MPI communicator
-        @param root: Rank of root/master node (this one)
-        """
         self.comm = comm
         self.rank = self.comm.rank
-        assert self.rank == root, "Enforced by __new__"
+        self.root = root
         self.size = self.comm.size
         self._cache = {}
         self._store = {}
         self.debugger = Debugger()
-
-    def __del__(self):
-        """Ensure slaves exit when we're done"""
-        self.exit()
 
     def _getCache(self, index):
         """Retrieve cache for particular data
@@ -172,6 +162,66 @@ class PoolMaster(object):
             self._cache[index] = Cache(self.comm)
         self._cache[index].__dict__.update(self._store)
         return self._cache[index]
+
+    def log(self, msg, *args):
+        """Log a debugging message"""
+        self.debugger.log("Node %d" % self.rank, msg, *args)
+
+    def _processQueue(self, func, passCache, queue, *args):
+        """Process a queue of data
+
+        The queue consists of a list of (index, data) tuples,
+        where the index maps to the cache, and the data is
+        passed to the 'func'.
+
+        @param func: function for slaves to run
+        @param passCache: True to pass a cache instance to func
+        @param queue: List of (index,data) tuples to process
+        @param args: Constant arguments
+        @return list of results from applying 'func' to dataList
+        """
+        if passCache:
+            return [func(self._getCache(i), data, *args) for i, data in queue]
+        return [func(data, *args) for i, data in queue]
+
+    def storeSet(self, name, value):
+        """Set value in store"""
+        self.log("storing", name, value)
+        self._store[name] = value
+
+    def storeDel(self, *nameList):
+        """Delete value in store"""
+        self.log("deleting from store", nameList)
+        for name in nameList:
+            del self._store[name]
+
+    def storeClear(self):
+        """Clear stored data"""
+        self.log("clearing store")
+        self._store = {}
+
+    def clearCache(self):
+        """Reset cache"""
+        self.log("clearing cache")
+        self._cache = {}
+
+
+class PoolMaster(PoolNode):
+    """Master node instance of MPI process pool
+
+    Only the master node should instantiate this.
+
+    WARNING: You should not let a pool instance hang around at program
+    termination, as the garbage collection behaves differently, and may
+    cause a segmentation fault (signal 11).
+    """
+    def __init__(self, *args, **kwargs):
+        super(PoolMaster, self).__init__(*args, **kwargs)
+        assert self.root == self.rank, "This is the master node"
+
+    def __del__(self):
+        """Ensure slaves exit when we're done"""
+        self.exit()
 
     def log(self, msg, *args):
         """Log a debugging message"""
@@ -211,7 +261,7 @@ class PoolMaster(object):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._noScatter(func, passCache, dataList, *args)
+            return self._processQueue(func, passCache, zip(range(num), dataList), *args)
 
         self.command("scatterGather")
 
@@ -246,22 +296,6 @@ class PoolMaster(object):
         self.log("done")
         return resultList
 
-    def _noScatter(self, func, passCache, dataList, *args):
-        """Do all "scatter" work on the master node
-
-        This is appropriate if there are no slave nodes, or
-        there's only a single job.
-
-        @param func: function for slaves to run
-        @param passCache: True to pass a cache instance to func
-        @param dataList: List of data to process
-        @param args: Constant arguments
-        @return list of results from applying 'func' to dataList
-        """
-        if passCache:
-            return [func(self._getCache[i], data, *args) for i, data in enumerate(dataList)]
-        return [func(data, *args) for data in dataList]
-
     @abortOnError
     def scatterGatherNoBalance(self, func, passCache, dataList, *args):
         """Scatter work to slaves and gather the results
@@ -287,7 +321,7 @@ class PoolMaster(object):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._noScatter(func, passCache, dataList, *args)
+            return self._processQueue(func, passCache, zip(range(num), dataList), *args)
 
         self.command("scatterGatherNoBalance")
 
@@ -324,13 +358,14 @@ class PoolMaster(object):
 
         # Execute our own jobs
         resultList = [None]*num
-        for index, data in distribution[self.rank]:
-            self.log("running job", index)
-            if passCache:
-                result = func(self._getCache(index), data, *args)
-            else:
-                result = func(data, *args)
-            resultList[index] = result
+
+        def ingestResults(nodeResults, distList):
+            for i, result in enumerate(nodeResults):
+                index = distList[i][0]
+                resultList[index] = result
+
+        ourResults = self._processQueue(func, passCache, distribution[self.rank], *args)
+        ingestResults(ourResults, distribution[self.rank])
 
         # Collect results
         pending = self.size - 1
@@ -339,9 +374,7 @@ class PoolMaster(object):
             slaveResults = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
             source = status.source
             self.log("gather from slave", source)
-            for i, result in enumerate(slaveResults):
-                index = distribution[source][i][0]
-                resultList[index] = result
+            ingestResults(slaveResults, distribution[source])
             pending -= 1
 
         self.log("done")
@@ -366,7 +399,7 @@ class PoolMaster(object):
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return [func(self._getCache[i], data, *args) for i, data in enumerate(dataList)]
+            return self._processQueue(func, True, zip(range(num), dataList), *args)
 
         self.command("scatterToPrevious")
 
@@ -413,7 +446,7 @@ class PoolMaster(object):
         @param name: name of data to store
         @param value: value to store
         """
-        self._store[name] = value
+        super(PoolMaster, self).storeSet(name, value)
         self.command("storeSet")
         self.log("give data")
         self.comm.broadcast((name, value), root=self.rank)
@@ -422,8 +455,7 @@ class PoolMaster(object):
     @abortOnError
     def storeDel(self, *nameList):
         """Delete stored data on slave"""
-        for name in nameList:
-            del self._store[name]
+        super(PoolMaster, self).storeDel(*nameList)
         self.command("storeDel")
         self.log("tell names")
         self.comm.broadcast(nameList, root=self.rank)
@@ -435,7 +467,7 @@ class PoolMaster(object):
 
         Slave data stores are reset.
         """
-        self._store = {}
+        super(PoolMaster, self).storeClear()
         self.command("storeClear")
 
     @abortOnError
@@ -444,44 +476,19 @@ class PoolMaster(object):
 
         Slave caches are reset.
         """
-        self._cache = {}
+        super(PoolMaster, self).clearCache()
         self.command("clearCache")
 
     def exit(self):
         """Command slaves to exit"""
         self.command("exit")
 
-class PoolSlave(object):
+
+class PoolSlave(PoolNode):
     """Slave node instance of MPI process pool"""
-    def __init__(self, comm, root=0):
-        """Constructor
-
-        Only slave nodes should instantiate this.
-
-        @param comm: MPI communicator
-        @param root: Rank of root/master node
-        """
-        self.comm = comm
-        self.rank = comm.rank
-        self.root = root
-        self.size = comm.size
-        self._cache = {}
-        self._store = {}
-        self.debugger = Debugger()
-
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Slave %d" % self.rank, msg, *args)
-
-    def _getCache(self, index):
-        """Retrieve cache for particular data
-
-        The cache is updated with the contents of the store.
-        """
-        if index not in self._cache:
-            self._cache[index] = Cache(self.comm)
-        self._cache[index].__dict__.update(self._store)
-        return self._cache[index]
 
     @abortOnError
     def run(self):
@@ -512,10 +519,7 @@ class PoolSlave(object):
         while not isinstance(job, NoOp):
             index, data = job
             self.log("running job")
-            if passCache:
-                result = func(self._getCache(index), data, *args)
-            else:
-                result = func(data, *args)
+            result = self._processQueue(func, passCache, [(index, data)], *args)[0]
             self.comm.send((index, result), self.root, tag=tags.result)
             self.log("waiting for job")
             job = self.comm.recv(tag=tags.work, source=self.root)
@@ -532,10 +536,7 @@ class PoolSlave(object):
         resultList = []
         for index, data in queue:
             self.log("running job", index)
-            if passCache:
-                result = func(self._getCache(index), data, *args)
-            else:
-                result = func(data, *args)
+            result = self._processQueue(func, passCache, [(index, data)], *args)[0]
             resultList.append(result)
 
         self.comm.send(resultList, self.root, tag=tags.result)
@@ -567,23 +568,12 @@ class PoolSlave(object):
     def storeSet(self):
         """Set value in store"""
         name, value = self.comm.broadcast(None, root=self.root)
-        self.log("storing", name, value)
-        self._store[name] = value
+        super(PoolSlave, self).storeSet(name, value)
 
     def storeDel(self):
         """Delete value in store"""
         nameList = self.comm.broadcast(None, root=self.root)
-        self.log("deleting", nameList)
-        for name in nameList:
-            del self._store[name]
-
-    def storeClear(self):
-        """Clear stored data"""
-        self._store = {}
-
-    def clearCache(self):
-        """Reset cache"""
-        self._cache = {}
+        super(PoolSlave, self).storeDel(*nameList)
 
     def exit(self):
         """Allow exit from loop in 'run'"""
