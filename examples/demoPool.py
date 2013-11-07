@@ -26,6 +26,8 @@ args = ["foo", "bar"]
 
 print "Calculating [sqrt(x) for x in %s]" % dataList
 print pool.scatterGather(test1, True, dataList, *args)
+pool.clearCache()
+print pool.scatterGatherNoBalance(test1, True, dataList, *args)
 print pool.scatterToPrevious(test2, dataList, *args)
 
 # This is important to prevent a segmentation fault

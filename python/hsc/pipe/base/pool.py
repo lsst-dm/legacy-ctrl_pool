@@ -205,12 +205,7 @@ class PoolMaster(object):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            # Can do everything here
-            if passCache:
-                self.cache.update((i, Cache(self.comm)) for i in range(num) if i not in self.cache)
-                return [func(self.cache[i], data, *args) for i, data in enumerate(dataList)]
-            else:
-                return [func(data, *args) for data in dataList]
+            return self._noScatter(func, passCache, dataList, *args)
 
         self.command("scatterGather")
 
@@ -244,6 +239,111 @@ class PoolMaster(object):
 
         self.log("done")
         return resultList
+
+    def _noScatter(self, func, passCache, dataList, *args):
+        """Do all "scatter" work on the master node
+
+        This is appropriate if there are no slave nodes, or
+        there's only a single job.
+
+        @param func: function for slaves to run
+        @param passCache: True to pass a cache instance to func
+        @param dataList: List of data to process
+        @param args: Constant arguments
+        @return list of results from applying 'func' to dataList
+        """
+        if passCache:
+            self.cache.update((i, Cache(self.comm)) for i in range(len(dataList)) if i not in self.cache)
+            return [func(self.cache[i], data, *args) for i, data in enumerate(dataList)]
+        return [func(data, *args) for data in dataList]
+
+    @abortOnError
+    def scatterGatherNoBalance(self, func, passCache, dataList, *args):
+        """Scatter work to slaves and gather the results
+
+        Work is distributed statically, so there is no load balancing.
+
+        Each slave applies the function to the data they're provided.
+        The slaves may optionally be passed a cache instance, which
+        they can store data in for subsequent executions (to ensure
+        subsequent data is distributed in the same pattern as before,
+        use the 'scatterToPrevious' method).  The cache can be cleared
+        by calling the 'clearCache' method.
+
+        The 'func' signature should be func(cache, data, *args) if
+        'passCache' is true; otherwise func(data, *args).
+
+        @param func: function for slaves to run; must be picklable
+        @param passCache: True to pass a cache instance to func
+        @param dataList: List of data to distribute to slaves; must be picklable
+        @param args: Constant arguments
+        @return list of results from applying 'func' to dataList
+        """
+        tags = Tags("result", "work")
+        num = len(dataList)
+        if self.size == 1 or num <= 1:
+            return self._noScatter(func, passCache, dataList, *args)
+
+        self.command("scatterGatherNoBalance")
+
+        # Send function
+        self.log("instruct")
+        self.comm.broadcast((tags, func, args, passCache), root=self.rank)
+
+        # Divide up the jobs
+        # Try to give root the least to do, so it also has time to manage
+        queue = zip(range(num), dataList) # index, data
+        if num < self.size:
+            distribution = [[queue[i]] for i in range(num)]
+            distribution.insert(self.rank, [])
+            for i in range(num, self.size - 1):
+                distribution.append([])
+        elif num % self.size == 0:
+            numEach = num//self.size
+            distribution = [queue[i*numEach:(i+1)*numEach] for i in range(self.size)]
+        else:
+            numEach = num//self.size
+            distribution = [queue[i*numEach:(i+1)*numEach] for i in range(self.size)]
+            for i in range(numEach*self.size, num):
+                distribution[(self.rank + 1) % self.size].append
+            distribution = list([] for i in range(self.size))
+            for i, job in enumerate(queue, self.rank + 1):
+                distribution[i % self.size].append(job)
+
+        # Distribute jobs
+        for source in range(self.size):
+            if source == self.rank:
+                continue
+            self.log("send jobs to ", source)
+            self.comm.send(distribution[source], source, tag=tags.work)
+
+        # Execute our own jobs
+        resultList = [None]*num
+        for index, data in distribution[self.rank]:
+            self.log("running job", index)
+            if passCache:
+                if index not in self.cache:
+                    self.cache[index] = Cache(self.comm)
+                result = func(self.cache[index], data, *args)
+            else:
+                result = func(data, *args)
+            resultList[index] = result
+
+        # Collect results
+        pending = self.size - 1
+        while pending > 0:
+            status = mpi.Status()
+            slaveResults = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
+            source = status.source
+            self.log("gather from slave", source)
+            for i, result in enumerate(slaveResults):
+                index = distribution[source][i][0]
+                resultList[index] = result
+            pending -= 1
+
+        self.log("done")
+        return resultList
+
 
     @abortOnError
     def scatterToPrevious(self, func, dataList, *args):
@@ -340,8 +440,8 @@ class PoolSlave(object):
         Slave accepts commands, which are the names of methods to execute.
         This exits when a command returns a true value.
         """
-        menu = dict((cmd, getattr(self, cmd)) for cmd in ("scatterGather", "scatterToPrevious", 
-                                                          "clearCache", "exit",))
+        menu = dict((cmd, getattr(self, cmd)) for cmd in ("scatterGather", "scatterGatherNoBalance",
+                                                          "scatterToPrevious", "clearCache", "exit",))
         self.log("waiting for command from", self.root)
         command = self.comm.broadcast(None, root=self.root)
         self.log("command", command)
@@ -371,6 +471,27 @@ class PoolSlave(object):
             self.log("waiting for job")
             job = self.comm.recv(tag=tags.work, source=self.root)
 
+        self.log("done")
+
+    def scatterGatherNoBalance(self):
+        """Process bulk scattered data and return results"""
+        self.log("waiting for instruction")
+        tags, func, args, passCache = self.comm.broadcast(None, root=self.root)
+        self.log("waiting for job")
+        queue = self.comm.recv(tag=tags.work, source=self.root)
+
+        resultList = []
+        for index, data in queue:
+            self.log("running job", index)
+            if passCache:
+                if index not in self.cache:
+                    self.cache[index] = Cache(self.comm)
+                result = func(self.cache[index], data, *args)
+            else:
+                result = func(data, *args)
+            resultList.append(result)
+
+        self.comm.send(resultList, self.root, tag=tags.result)
         self.log("done")
 
     def scatterToPrevious(self):
