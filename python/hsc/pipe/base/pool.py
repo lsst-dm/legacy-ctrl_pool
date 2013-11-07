@@ -250,6 +250,16 @@ class PoolMaster(PoolNode):
         """Ensure slaves exit when we're done"""
         self.exit()
 
+    def _getCache(self, index):
+        """Retrieve cache for particular data
+
+        The cache is updated with the contents of the store.
+        """
+        if index not in self._cache:
+            self._cache[index] = Cache(self.comm)
+        self._cache[index].__dict__.update(self._store)
+        return self._cache[index]
+
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Master", msg, *args)
@@ -516,6 +526,16 @@ class PoolSlave(PoolNode):
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Slave %d" % self.rank, msg, *args)
+
+    def _getCache(self, index):
+        """Retrieve cache for particular data
+
+        The cache is updated with the contents of the store.
+        """
+        if index not in self._cache:
+            self._cache[index] = Cache(self.comm)
+        self._cache[index].__dict__.update(self._store)
+        return self._cache[index]
 
     @abortOnError
     def run(self):
