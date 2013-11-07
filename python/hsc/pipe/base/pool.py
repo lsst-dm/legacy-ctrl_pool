@@ -107,8 +107,14 @@ class Cache(Struct):
         super(Cache, self).__init__(comm=comm)
 
 class Debugger(object):
+    """Debug logger singleton
+
+    Disabled by default; to enable, do: 'Debugger().enabled = True'
+    You can also redirect the output by changing the 'out' attribute.
+    """
     _instance = None
     def __new__(cls):
+        """Create singleton"""
         if not cls._instance:
             cls._instance = super(Debugger, cls).__new__(cls)
             cls._instance.enabled = False
@@ -116,6 +122,14 @@ class Debugger(object):
         return cls._instance
 
     def log(self, source, msg, *args):
+        """Log message
+
+        The 'args' are only stringified if we're enabled.
+
+        @param source: name of source
+        @param msg: message to write
+        @param args: additional outputs to append to message
+        """
         if self.enabled:
             self.out.write("%s: %s" % (source, msg))
             for arg in args:
