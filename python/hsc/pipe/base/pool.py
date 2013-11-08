@@ -7,7 +7,7 @@ import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
 
-__all__ = ["Comm", "Tags", "startPool", "abortOnError",]
+__all__ = ["Comm", "Pool", "startPool",]
 
 def abortOnError(func):
     """Decorator to throw an MPI abort on an unhandled exception"""
@@ -106,20 +106,42 @@ class Cache(Struct):
     def __init__(self, comm):
         super(Cache, self).__init__(comm=comm)
 
+
+class SingletonMeta(type):
+    """Metaclass to produce a singleton
+
+    Doing a singleton mixin without a metaclass (via __new__) is
+    annoying because the user has to name his __init__ something else
+    (otherwise it's called every time, which undoes any changes).
+    Here, the __init__ is called exactly once.
+
+    Because this is a metaclass, note that:
+    * "self" here is the class
+    * "__init__" is making the class (it's like the body of the
+      class definition).
+    * "__call__" is making an instance of the class (it's like
+      "__new__" in the class).
+    """
+    def __init__(self, name, bases, dict_):
+        super(SingletonMeta, self).__init__(name, bases, dict)
+        self._instance = None
+
+    def __call__(self, *args, **kwargs):
+        if self._instance is None:
+            self._instance = super(SingletonMeta, self).__call__(*args, **kwargs)
+        return self._instance
+
+
 class Debugger(object):
     """Debug logger singleton
 
     Disabled by default; to enable, do: 'Debugger().enabled = True'
     You can also redirect the output by changing the 'out' attribute.
     """
-    _instance = None
-    def __new__(cls):
-        """Create singleton"""
-        if not cls._instance:
-            cls._instance = super(Debugger, cls).__new__(cls)
-            cls._instance.enabled = False
-            cls._instance.out = sys.stderr
-        return cls._instance
+    __metaclass__ = SingletonMeta
+    def __init__(self):
+        self.enabled = False
+        self.out = sys.stderr
 
     def log(self, source, msg, *args):
         """Log message
@@ -144,6 +166,7 @@ class PoolNode(object):
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
+    __metaclass__ = SingletonMeta
     def __init__(self, comm, root=0):
         self.comm = comm
         self.rank = self.comm.rank
@@ -166,6 +189,9 @@ class PoolNode(object):
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Node %d" % self.rank, msg, *args)
+
+    def isMaster(self):
+        return self.rank == self.root
 
     def _processQueue(self, func, passCache, queue, *args):
         """Process a queue of data
@@ -579,6 +605,29 @@ class PoolSlave(PoolNode):
         """Allow exit from loop in 'run'"""
         return True
 
+
+class PoolMeta(SingletonMeta):
+    """Generate the appropriate subclass
+
+    Required to inherit from SingletonMeta because PoolNode has
+    that as its metaclass.
+    """
+    def __call__(self, comm=Comm(), root=0):
+        """Singleton pattern, while choosing the correct specialisation"""
+        if self._instance is not None:
+            return self._instance
+        cls = PoolMaster if comm.rank == root else PoolSlave
+        self._instance = cls(comm, root=root)
+        return self._instance
+
+class Pool(PoolNode):
+    """Generic pool object
+
+    Will be specialised appropriately by metaclass
+    """
+    __metaclass__ = PoolMeta
+
+
 def startPool(comm=Comm(), root=0, killSlaves=True):
     """
     Returns a PoolMaster object for the master node.
@@ -598,12 +647,13 @@ def startPool(comm=Comm(), root=0, killSlaves=True):
     @param comm: MPI communicator
     @param root: Rank of root/master node
     @param killSlaves: Kill slaves on completion?
-        """
-    if comm.rank == root:
-        return PoolMaster(comm, root=root)
-    pool = PoolSlave(comm, root=root)
-    pool.run()
-    if killSlaves:
-        del pool # Required to prevent segmentation fault on exit
-        exit()
+    """
+    pool = Pool(comm, root=root)
+    if not pool.isMaster():
+        pool.run()
+        if killSlaves:
+            del pool # Required to prevent segmentation fault on exit
+            exit()
     return pool
+
+
