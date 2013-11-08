@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import hsc.pipe.base.log # Monkey-patch lsst.pex.logging
+
 import re
 import os
 import os.path
@@ -10,6 +12,7 @@ import argparse
 import lsst.pex.logging as pexLog
 import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
+from hsc.pipe.base.pool import startPool
 
 # Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
 # http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
@@ -217,13 +220,16 @@ def submitPbs(TaskClass, description, command):
 
 class PbsCmdLineTask(CmdLineTask):
     @classmethod
-    def parseAndRun(self, *args, **kwargs):
+    def parseAndRun(cls, *args, **kwargs):
         """Add node-specific destination to log"""
-        job = kwargs.pop("job", None)
+        self._initLog(kwargs.pop("job", None))
+        super(PbsCmdLineTask, cls).parseAndRun(*args, **kwargs)
+
+    @staticmethod
+    def _initLog(job):
         if job is not None:
             machine = os.uname()[1].split(".")[0]
             pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (machine, os.getpid()))
-        super(PbsCmdLineTask, self).parseAndRun(*args, **kwargs)
 
     @classmethod
     def parseAndSubmit(cls, args=None, **kwargs):
@@ -261,3 +267,12 @@ class PbsCmdLineTask(CmdLineTask):
         return "python -c 'import %s; %s.%s.parseAndRun(job=\"%s\")' %s" % (module, module, cls.__name__,
                                                                             args.job,
                                                                             shCommandFromArgs(args.leftover))
+
+class PbsPoolTask(PbsCmdLineTask):
+    @classmethod
+    def parseAndRun(cls, *args, **kwargs):
+        """Run with a MPI process pool"""
+        self._initLog(kwargs.pop("job", None))
+        pool = startPool()
+        CmdLineTask.parseAndRun(*args, **kwargs) # skip PbsCmdLineTask to avoid initialising log twice
+        pool.exit()
