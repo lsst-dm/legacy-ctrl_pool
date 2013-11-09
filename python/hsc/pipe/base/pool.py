@@ -4,6 +4,7 @@ import time
 import types
 import copy_reg
 from functools import wraps
+from contextlib import contextmanager
 
 import mpi4py.MPI as mpi
 
@@ -31,7 +32,7 @@ def pickleInstanceMethod(method):
 copy_reg.pickle(types.MethodType, pickleInstanceMethod)
 
 def abortOnError(func):
-    """Decorator to throw an MPI abort on an unhandled exception"""
+    """Function decorator to throw an MPI abort on an unhandled exception"""
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -42,6 +43,112 @@ def abortOnError(func):
             import traceback
             traceback.print_exc(file=sys.stderr)
             mpi.COMM_WORLD.Abort(1)
+    return wrapper
+
+class PickleHolder(object):
+    """Singleton to hold what's about to be pickled.
+
+    We hold onto the object in case there's trouble pickling,
+    so we can figure out what class in particular is causing
+    the trouble.
+
+    The held object is in the 'obj' attribute.
+
+    Here we use the __new__-style singleton pattern, because
+    we specifically want __init__ to be called each time.
+    """
+    _instance = None
+    def __new__(cls, hold=None):
+        if cls._instance is None:
+            cls._instance = super(PickleHolder, cls).__new__(cls, hold)
+            cls._instance.obj = None
+        return cls._instance
+    def __init__(self, hold=None):
+        """Hold onto new object"""
+        if hold is not None:
+            self.obj = hold
+    def __enter__(self):
+        pass
+    def __exit__(self, excType, excVal, tb):
+        """Drop held object if there were no problems"""
+        if excType is None:
+            self.obj = None
+
+
+def guessPickleObj():
+    """Try to guess what's not pickling after an exception
+
+    This tends to work if the problem is coming from the
+    regular pickle module.  If it's coming from the bowels
+    of mpi4py, there's not much that can be done.
+    """
+    import sys
+    excType, excValue, tb = sys.exc_info()
+    # Build a stack of traceback elements
+    stack = []
+    while tb:
+        stack.append(tb)
+        tb = tb.tb_next
+
+    try:
+        # This is the code version of a my way to find what's not pickling in pdb.
+        # This should work if it's coming from the regular pickle module, and they
+        # haven't changed the variable names since python 2.7.3.
+        return stack[-2].tb_frame.f_locals["obj"]
+    except:
+        return None
+
+
+@contextmanager
+def pickleSniffer(abort=False):
+    """Context manager to sniff out pickle problems
+
+    If there's a pickle error, you're normally told what the problem
+    class is.  However, all SWIG objects are reported as "SwigPyObject".
+    In order to figure out which actual SWIG-ed class is causing
+    problems, we need to go digging.
+
+    Use like this:
+
+        with pickleSniffer():
+            someOperationInvolvingPickle()
+
+    If 'abort' is True, will call MPI abort in the event of problems.
+    """
+    try:
+        yield
+    except Exception as e:
+        if not "SwigPyObject" in e.message or not "pickle" in e.message:
+            raise
+        import sys
+        import traceback
+
+        sys.stderr.write("Pickling error detected: %s\n" % e)
+        traceback.print_exc(file=sys.stderr)
+        obj = guessPickleObj()
+        heldObj = PickleHolder().obj
+        if obj is None and heldObj is not None:
+            # Try to reproduce using what was being pickled using the regular pickle module,
+            # so we've got a chance of figuring out what the problem is.
+            import pickle
+            try:
+                pickle.dumps(heldObj)
+                sys.stderr.write("Hmmm, that's strange: no problem with pickling held object?!?!\n")
+            except Exception:
+                obj = guessPickleObj()
+        if obj is None:
+            sys.stderr.write("Unable to determine class causing pickle problems.\n")
+        else:
+            sys.stderr.write("Object that could not be pickled: %s\n" % obj)
+        if abort:
+            mpi.COMM_WORLD.Abort(1)
+
+def catchPicklingError(func):
+    """Function decorator to catch errors in pickling and print something useful"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with pickleSniffer(True):
+            return func(*args, **kwargs)
     return wrapper
 
 class Comm(mpi.Intracomm):
@@ -71,6 +178,10 @@ class Comm(mpi.Intracomm):
             time.sleep(self._recvSleep)
         return super(Comm, self).recv(obj=obj, source=sts.source, tag=sts.tag, status=status)
 
+    def send(self, obj=None, *args, **kwargs):
+        with PickleHolder(obj):
+            return super(Comm, self).send(obj, *args, **kwargs)
+
     def _checkBarrierComm(self):
         """Ensure the duplicate communicator is available"""
         if self._barrierComm is None:
@@ -98,8 +209,9 @@ class Comm(mpi.Intracomm):
             mask <<= 1
 
     def broadcast(self, value, root=0):
-        self.Barrier()
-        return super(Comm, self).bcast(value, root=root)
+        with PickleHolder(value):
+            self.Barrier()
+            return super(Comm, self).bcast(value, root=root)
 
     def Free(self):
        if self._barrierComm is not None:
@@ -134,7 +246,7 @@ class SingletonMeta(type):
     Doing a singleton mixin without a metaclass (via __new__) is
     annoying because the user has to name his __init__ something else
     (otherwise it's called every time, which undoes any changes).
-    Here, the __init__ is called exactly once.
+    Using this metaclass, the class's __init__ is called exactly once.
 
     Because this is a metaclass, note that:
     * "self" here is the class
@@ -293,6 +405,7 @@ class PoolMaster(PoolNode):
         self.comm.broadcast(cmd, root=self.rank)
 
     @abortOnError
+    @catchPicklingError
     def scatterGather(self, func, passCache, dataList, *args):
         """Scatter work to slaves and gather the results
 
@@ -354,6 +467,7 @@ class PoolMaster(PoolNode):
         return resultList
 
     @abortOnError
+    @catchPicklingError
     def scatterGatherNoBalance(self, func, passCache, dataList, *args):
         """Scatter work to slaves and gather the results
 
@@ -438,6 +552,7 @@ class PoolMaster(PoolNode):
         return resultList
 
     @abortOnError
+    @catchPicklingError
     def scatterToPrevious(self, func, dataList, *args):
         """Scatter work to the same target as before
 
@@ -492,6 +607,7 @@ class PoolMaster(PoolNode):
         return resultList
 
     @abortOnError
+    @catchPicklingError
     def storeSet(self, name, value):
         """Store data on slave
 
@@ -576,6 +692,7 @@ class PoolSlave(PoolNode):
             self.log("command", command)
         self.log("exiting")
 
+    @catchPicklingError
     def scatterGather(self):
         """Process scattered data and return results"""
         self.log("waiting for instruction")
@@ -593,6 +710,7 @@ class PoolSlave(PoolNode):
 
         self.log("done")
 
+    @catchPicklingError
     def scatterGatherNoBalance(self):
         """Process bulk scattered data and return results"""
         self.log("waiting for instruction")
@@ -609,6 +727,7 @@ class PoolSlave(PoolNode):
         self.comm.send(resultList, self.root, tag=tags.result)
         self.log("done")
 
+    @catchPicklingError
     def scatterToPrevious(self):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
