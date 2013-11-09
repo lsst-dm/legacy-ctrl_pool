@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+import types
+import copy_reg
 from functools import wraps
 
 import mpi4py.MPI as mpi
@@ -9,6 +11,24 @@ from lsst.pipe.base import Struct
 
 __all__ = ["Comm", "Pool", "startPool", "abortOnError",]
 
+
+def unpickleInstanceMethod(obj, name):
+    """Unpickle an instance method
+
+    This has to be a named function rather than a lambda because
+    pickle needs to find it.
+    """
+    return getattr(obj, name)
+def pickleInstanceMethod(method):
+    """Pickle an instance method
+
+    The instance method is divided into the object and the
+    method name.
+    """
+    obj = method.__self__
+    name = method.__name__
+    return unpickleInstanceMethod, (obj, name)
+copy_reg.pickle(types.MethodType, pickleInstanceMethod)
 
 def abortOnError(func):
     """Decorator to throw an MPI abort on an unhandled exception"""
