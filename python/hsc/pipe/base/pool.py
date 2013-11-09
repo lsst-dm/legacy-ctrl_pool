@@ -449,6 +449,9 @@ class PoolMaster(PoolNode):
         num = len(dataList)
         if self.size == 1 or num <= 1:
             return self._processQueue(func, passCache, zip(range(num), dataList), *args)
+        if self.size == num:
+            # We're shooting ourselves in the foot using dynamic distribution
+            return self.scatterGatherNoBalance(func, passCache, dataList, *args)
 
         self.command("scatterGather")
 
@@ -589,6 +592,9 @@ class PoolMaster(PoolNode):
         if self.size == 1 or num <= 1:
             # Can do everything here
             return self._processQueue(func, True, zip(range(num), dataList), *args)
+        if self.size == num:
+            # We're shooting ourselves in the foot using dynamic distribution
+            return self.scatterGatherNoBalance(func, True, dataList, *args)
 
         self.command("scatterToPrevious")
 
