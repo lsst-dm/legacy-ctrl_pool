@@ -220,18 +220,6 @@ def submitPbs(TaskClass, description, command):
 
 class PbsCmdLineTask(CmdLineTask):
     @classmethod
-    def parseAndRun(cls, *args, **kwargs):
-        """Add node-specific destination to log"""
-        self._initLog(kwargs.pop("job", None))
-        super(PbsCmdLineTask, cls).parseAndRun(*args, **kwargs)
-
-    @staticmethod
-    def _initLog(job):
-        if job is not None:
-            machine = os.uname()[1].split(".")[0]
-            pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (machine, os.getpid()))
-
-    @classmethod
     def parseAndSubmit(cls, args=None, **kwargs):
         taskParser = cls._makeArgumentParser(doPbs=True, add_help=False)
         pbsParser = PbsArgumentParser(parent=taskParser)
@@ -264,15 +252,15 @@ class PbsCmdLineTask(CmdLineTask):
         @param args: Parsed PBS arguments (from PbsArgumentParser)
         """
         module = cls.__module__
-        return "python -c 'import %s; %s.%s.parseAndRun(job=\"%s\")' %s" % (module, module, cls.__name__,
-                                                                            args.job,
-                                                                            shCommandFromArgs(args.leftover))
+        return ("python -c 'import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
+                "import %s; %s.%s.parseAndRun()' %s") % (args.job, module, module, cls.__name__,
+                                                         shCommandFromArgs(args.leftover))
+
 
 class PbsPoolTask(PbsCmdLineTask):
     @classmethod
     def parseAndRun(cls, *args, **kwargs):
         """Run with a MPI process pool"""
-        self._initLog(kwargs.pop("job", None))
         pool = startPool()
-        CmdLineTask.parseAndRun(*args, **kwargs) # skip PbsCmdLineTask to avoid initialising log twice
+        super(PbsPoolTask, cls).parseAndRun(*args, **kwargs)
         pool.exit()
