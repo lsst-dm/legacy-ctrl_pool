@@ -6,17 +6,18 @@
 #
 
 import math
-def test1(cache, data, *args):
+def test1(cache, data, *args, **kwargs):
     result = math.sqrt(data)
     print "Store: %s" % ("present" if hasattr(cache, "p") else "absent")
     cache.result = result
     cache.args = args
+    cache.kwargs = kwargs
     return result
 
-def test2(cache, data, *args):
+def test2(cache, data, *args, **kwargs):
     result = math.sqrt(data)
-    print "%d: %f vs %f ; %s vs %s ; %s" % (cache.comm.rank, cache.result, result, cache.args,
-                                            args, hasattr(cache, "p"))
+    print "%d: %f vs %f ; %s vs %s ; %s vs %s ; %s" % (cache.comm.rank, cache.result, result, cache.args,
+                                                       args, cache.kwargs, kwargs, hasattr(cache, "p"))
     return None
 
 from hsc.pipe.base.pool import startPool, Pool, Debugger, Comm
@@ -34,19 +35,20 @@ def context1():
 
     print "Calculating [sqrt(x) for x in %s]" % dataList
     print "And checking for 'p' in our pool"
-    print pool1.scatterGather(test1, True, dataList, "foo", "bar")
+    print pool1.scatterGather(test1, True, dataList, "foo", foo="bar")
     pool1.clearCache()
 
 # Now let's say we're somewhere else and forgot to hold onto pool1
 def context2():
     fruit = ["tomato", "tomahtoe"]
+    veges = {"potato": "potahtoe"}
     pool2 = Pool()
     # We inherit a pool with 'p' in it --- it's the same pool as before
     pool2.storeDel("p") # Now there's no 'p' in our pool...
-    print pool2.scatterGatherNoBalance(test1, True, dataList, *fruit)
+    print pool2.scatterGatherNoBalance(test1, True, dataList, *fruit, **veges)
     pool2.storeSet("p", 2)
     pool2.storeClear()
-    print pool2.scatterToPrevious(test2, dataList, *fruit)
+    print pool2.scatterToPrevious(test2, dataList, *fruit, **veges)
 
 context1()
 context2()

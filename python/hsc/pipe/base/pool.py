@@ -343,7 +343,7 @@ class PoolNode(object):
     def isMaster(self):
         return self.rank == self.root
 
-    def _processQueue(self, func, passCache, queue, *args):
+    def _processQueue(self, func, passCache, queue, *args, **kwargs):
         """Process a queue of data
 
         The queue consists of a list of (index, data) tuples,
@@ -357,8 +357,8 @@ class PoolNode(object):
         @return list of results from applying 'func' to dataList
         """
         if passCache:
-            return [func(self._getCache(i), data, *args) for i, data in queue]
-        return [func(data, *args) for i, data in queue]
+            return [func(self._getCache(i), data, *args, **kwargs) for i, data in queue]
+        return [func(data, *args, **kwargs) for i, data in queue]
 
     def storeSet(self, name, value):
         """Set value in store"""
@@ -423,7 +423,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def scatterGather(self, func, passCache, dataList, *args):
+    def scatterGather(self, func, passCache, dataList, *args, **kwargs):
         """Scatter work to slaves and gather the results
 
         Work is distributed dynamically, so that slaves that finish
@@ -436,28 +436,29 @@ class PoolMaster(PoolNode):
         use the 'scatterToPrevious' method).  The cache also contains
         data that has been stored on the slaves.
 
-        The 'func' signature should be func(cache, data, *args) if
-        'passCache' is true; otherwise func(data, *args).
+        The 'func' signature should be func(cache, data, *args, **kwargs)
+        if 'passCache' is true; otherwise func(data, *args, **kwargs).
 
         @param func: function for slaves to run; must be picklable
         @param passCache: True to pass a cache instance to func
         @param dataList: List of data to distribute to slaves; must be picklable
-        @param args: Constant arguments
+        @param args: List of constant arguments
+        @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(func, passCache, zip(range(num), dataList), *args)
+            return self._processQueue(func, passCache, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.scatterGatherNoBalance(func, passCache, dataList, *args)
+            return self.scatterGatherNoBalance(func, passCache, dataList, *args, **kwargs)
 
         self.command("scatterGather")
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, passCache), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, passCache), root=self.rank)
 
         # Parcel out first set of data
         queue = zip(range(num), dataList) # index, data
@@ -488,7 +489,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def scatterGatherNoBalance(self, func, passCache, dataList, *args):
+    def scatterGatherNoBalance(self, func, passCache, dataList, *args, **kwargs):
         """Scatter work to slaves and gather the results
 
         Work is distributed statically, so there is no load balancing.
@@ -500,25 +501,26 @@ class PoolMaster(PoolNode):
         use the 'scatterToPrevious' method).  The cache also contains
         data that has been stored on the slaves.
 
-        The 'func' signature should be func(cache, data, *args) if
-        'passCache' is true; otherwise func(data, *args).
+        The 'func' signature should be func(cache, data, *args, **kwargs)
+        if 'passCache' is true; otherwise func(data, *args, **kwargs).
 
         @param func: function for slaves to run; must be picklable
         @param passCache: True to pass a cache instance to func
         @param dataList: List of data to distribute to slaves; must be picklable
-        @param args: Constant arguments
+        @param args: List of constant arguments
+        @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(func, passCache, zip(range(num), dataList), *args)
+            return self._processQueue(func, passCache, zip(range(num), dataList), *args, **kwargs)
 
         self.command("scatterGatherNoBalance")
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, passCache), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, passCache), root=self.rank)
 
         # Divide up the jobs
         # Try to give root the least to do, so it also has time to manage
@@ -555,7 +557,7 @@ class PoolMaster(PoolNode):
                 index = distList[i][0]
                 resultList[index] = result
 
-        ourResults = self._processQueue(func, passCache, distribution[self.rank], *args)
+        ourResults = self._processQueue(func, passCache, distribution[self.rank], *args, **kwargs)
         ingestResults(ourResults, distribution[self.rank])
 
         # Collect results
@@ -573,34 +575,35 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def scatterToPrevious(self, func, dataList, *args):
+    def scatterToPrevious(self, func, dataList, *args, **kwargs):
         """Scatter work to the same target as before
 
         Work is distributed so that each slave handles the same
         indices in the dataList as when 'scatterGather' was called.
         This allows the right data to go to the right cache.
 
-        The 'func' signature should be func(cache, data, *args).
+        The 'func' signature should be func(cache, data, *args, **kwargs).
 
         @param func: function for slaves to run; must be picklable
         @param dataList: List of data to distribute to slaves; must be picklable
-        @param args: Constant arguments
+        @param args: List of constant arguments
+        @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return self._processQueue(func, True, zip(range(num), dataList), *args)
+            return self._processQueue(func, True, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.scatterGatherNoBalance(func, True, dataList, *args)
+            return self.scatterGatherNoBalance(func, True, dataList, *args, **kwargs)
 
         self.command("scatterToPrevious")
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs), root=self.rank)
 
         requestList = self.comm.gather(root=self.rank)
         self.log("listen", requestList)
@@ -719,14 +722,14 @@ class PoolSlave(PoolNode):
     def scatterGather(self):
         """Process scattered data and return results"""
         self.log("waiting for instruction")
-        tags, func, args, passCache = self.comm.broadcast(None, root=self.root)
+        tags, func, args, kwargs, passCache = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
         job = self.comm.scatter(root=self.root)
 
         while not isinstance(job, NoOp):
             index, data = job
             self.log("running job")
-            result = self._processQueue(func, passCache, [(index, data)], *args)[0]
+            result = self._processQueue(func, passCache, [(index, data)], *args, **kwargs)[0]
             self.comm.send((index, result), self.root, tag=tags.result)
             self.log("waiting for job")
             job = self.comm.recv(tag=tags.work, source=self.root)
@@ -737,14 +740,14 @@ class PoolSlave(PoolNode):
     def scatterGatherNoBalance(self):
         """Process bulk scattered data and return results"""
         self.log("waiting for instruction")
-        tags, func, args, passCache = self.comm.broadcast(None, root=self.root)
+        tags, func, args, kwargs, passCache = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
         queue = self.comm.recv(tag=tags.work, source=self.root)
 
         resultList = []
         for index, data in queue:
             self.log("running job", index)
-            result = self._processQueue(func, passCache, [(index, data)], *args)[0]
+            result = self._processQueue(func, passCache, [(index, data)], *args, **kwargs)[0]
             resultList.append(result)
 
         self.comm.send(resultList, self.root, tag=tags.result)
@@ -754,7 +757,7 @@ class PoolSlave(PoolNode):
     def scatterToPrevious(self):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
-        tags, func, args = self.comm.broadcast(None, root=self.root)
+        tags, func, args, kwargs = self.comm.broadcast(None, root=self.root)
         queue = self._cache.keys()
         index = queue.pop(0) if queue else -1
         self.log("request job", index)
@@ -764,7 +767,7 @@ class PoolSlave(PoolNode):
 
         while index >= 0:
             self.log("running job")
-            result = func(self._getCache(index), data, *args)
+            result = func(self._getCache(index), data, *args, **kwargs)
             self.log("pending", queue)
             nextIndex = queue.pop(0) if queue else -1
             self.comm.send((index, result, nextIndex), self.root, tag=tags.result)
