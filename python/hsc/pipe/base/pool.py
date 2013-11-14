@@ -423,7 +423,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def scatterGather(self, func, passCache, dataList, *args, **kwargs):
+    def map(self, func, passCache, dataList, *args, **kwargs):
         """Scatter work to slaves and gather the results
 
         Work is distributed dynamically, so that slaves that finish
@@ -433,7 +433,7 @@ class PoolMaster(PoolNode):
         The slaves may optionally be passed a cache instance, which
         they can use to store data for subsequent executions (to ensure
         subsequent data is distributed in the same pattern as before,
-        use the 'scatterToPrevious' method).  The cache also contains
+        use the 'mapToPrevious' method).  The cache also contains
         data that has been stored on the slaves.
 
         The 'func' signature should be func(cache, data, *args, **kwargs)
@@ -452,9 +452,9 @@ class PoolMaster(PoolNode):
             return self._processQueue(func, passCache, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.scatterGatherNoBalance(func, passCache, dataList, *args, **kwargs)
+            return self.mapNoBalance(func, passCache, dataList, *args, **kwargs)
 
-        self.command("scatterGather")
+        self.command("map")
 
         # Send function
         self.log("instruct")
@@ -489,7 +489,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def scatterGatherNoBalance(self, func, passCache, dataList, *args, **kwargs):
+    def mapNoBalance(self, func, passCache, dataList, *args, **kwargs):
         """Scatter work to slaves and gather the results
 
         Work is distributed statically, so there is no load balancing.
@@ -498,7 +498,7 @@ class PoolMaster(PoolNode):
         The slaves may optionally be passed a cache instance, which
         they can store data in for subsequent executions (to ensure
         subsequent data is distributed in the same pattern as before,
-        use the 'scatterToPrevious' method).  The cache also contains
+        use the 'mapToPrevious' method).  The cache also contains
         data that has been stored on the slaves.
 
         The 'func' signature should be func(cache, data, *args, **kwargs)
@@ -516,7 +516,7 @@ class PoolMaster(PoolNode):
         if self.size == 1 or num <= 1:
             return self._processQueue(func, passCache, zip(range(num), dataList), *args, **kwargs)
 
-        self.command("scatterGatherNoBalance")
+        self.command("mapNoBalance")
 
         # Send function
         self.log("instruct")
@@ -575,11 +575,11 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def scatterToPrevious(self, func, dataList, *args, **kwargs):
+    def mapToPrevious(self, func, dataList, *args, **kwargs):
         """Scatter work to the same target as before
 
         Work is distributed so that each slave handles the same
-        indices in the dataList as when 'scatterGather' was called.
+        indices in the dataList as when 'map' was called.
         This allows the right data to go to the right cache.
 
         The 'func' signature should be func(cache, data, *args, **kwargs).
@@ -597,9 +597,9 @@ class PoolMaster(PoolNode):
             return self._processQueue(func, True, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.scatterGatherNoBalance(func, True, dataList, *args, **kwargs)
+            return self.mapNoBalance(func, True, dataList, *args, **kwargs)
 
-        self.command("scatterToPrevious")
+        self.command("mapToPrevious")
 
         # Send function
         self.log("instruct")
@@ -706,9 +706,9 @@ class PoolSlave(PoolNode):
         Slave accepts commands, which are the names of methods to execute.
         This exits when a command returns a true value.
         """
-        menu = dict((cmd, getattr(self, cmd)) for cmd in ("scatterGather", "scatterGatherNoBalance",
-                                                          "scatterToPrevious", "storeSet", "storeDel",
-                                                          "storeClear", "clearCache", "exit",))
+        menu = dict((cmd, getattr(self, cmd)) for cmd in ("map", "mapNoBalance", "mapToPrevious",
+                                                          "storeSet", "storeDel", "storeClear",
+                                                          "clearCache", "exit",))
         self.log("waiting for command from", self.root)
         command = self.comm.broadcast(None, root=self.root)
         self.log("command", command)
@@ -719,7 +719,7 @@ class PoolSlave(PoolNode):
         self.log("exiting")
 
     @catchPicklingError
-    def scatterGather(self):
+    def map(self):
         """Process scattered data and return results"""
         self.log("waiting for instruction")
         tags, func, args, kwargs, passCache = self.comm.broadcast(None, root=self.root)
@@ -737,7 +737,7 @@ class PoolSlave(PoolNode):
         self.log("done")
 
     @catchPicklingError
-    def scatterGatherNoBalance(self):
+    def mapNoBalance(self):
         """Process bulk scattered data and return results"""
         self.log("waiting for instruction")
         tags, func, args, kwargs, passCache = self.comm.broadcast(None, root=self.root)
@@ -754,7 +754,7 @@ class PoolSlave(PoolNode):
         self.log("done")
 
     @catchPicklingError
-    def scatterToPrevious(self):
+    def mapToPrevious(self):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
         tags, func, args, kwargs = self.comm.broadcast(None, root=self.root)

@@ -35,7 +35,7 @@ def context1():
 
     print "Calculating [sqrt(x) for x in %s]" % dataList
     print "And checking for 'p' in our pool"
-    print pool1.scatterGather(test1, True, dataList, "foo", foo="bar")
+    print pool1.map(test1, True, dataList, "foo", foo="bar")
     pool1.clearCache()
 
 # Now let's say we're somewhere else and forgot to hold onto pool1
@@ -45,10 +45,10 @@ def context2():
     pool2 = Pool()
     # We inherit a pool with 'p' in it --- it's the same pool as before
     pool2.storeDel("p") # Now there's no 'p' in our pool...
-    print pool2.scatterGatherNoBalance(test1, True, dataList, *fruit, **veges)
+    print pool2.mapNoBalance(test1, True, dataList, *fruit, **veges)
     pool2.storeSet("p", 2)
     pool2.storeClear()
-    print pool2.scatterToPrevious(test2, dataList, *fruit, **veges)
+    print pool2.mapToPrevious(test2, dataList, *fruit, **veges)
 
 context1()
 context2()
