@@ -48,6 +48,32 @@ def pickleInstanceMethod(method):
     return unpickleInstanceMethod, (obj, name)
 copy_reg.pickle(types.MethodType, pickleInstanceMethod)
 
+def unpickleFunction(moduleName, funcName):
+    """Unpickle a function
+
+    This has to be a named function rather than a lambda because
+    pickle needs to find it.
+    """
+    import importlib
+    module = importlib.import_module(moduleName)
+    return getattr(module, funcName)
+def pickleFunction(function):
+    """Pickle a function
+
+    This assumes that we can recreate the function object by grabbing
+    it from the proper module.  This may be violated if the function
+    is a lambda or in __main__.  In that case, I recommend recasting
+    the function as an object with a __call__ method.
+
+    Another problematic case may be a wrapped (e.g., decorated) method
+    in a class: the 'method' is then a function, and recreating it is
+    not as easy as we assume here.
+    """
+    moduleName = function.__module__
+    funcName = function.__name__
+    return unpickleFunction, (moduleName, funcName)
+copy_reg.pickle(types.FunctionType, pickleFunction)
+
 def abortOnError(func):
     """Function decorator to throw an MPI abort on an unhandled exception"""
     @wraps(func)
