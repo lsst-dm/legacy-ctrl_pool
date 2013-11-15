@@ -17,7 +17,7 @@ copy_reg.pickle(pexLog.ScreenLog, pickleLog)
 
 def jobLog(job):
     """Add a job-specific log destination"""
-    if job is None or job != "None":
+    if job is None or job == "None":
         return
     machine = os.uname()[1].split(".")[0]
     pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (machine, os.getpid()))
