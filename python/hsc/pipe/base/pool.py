@@ -161,7 +161,8 @@ def pickleSniffer(abort=False):
     try:
         yield
     except Exception as e:
-        if not "SwigPyObject" in e.message or not "pickle" in e.message:
+        if (not isinstance(e.message, basestring) or not "SwigPyObject" in e.message or
+            not "pickle" in e.message):
             raise
         import sys
         import traceback
