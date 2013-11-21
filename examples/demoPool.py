@@ -31,7 +31,7 @@ dataList = map(float, range(10))
 
 def context1():
     pool1 = Pool()
-    pool1.storeSet("p", 1)
+    pool1.storeSet(p=1)
 
     print "Calculating [sqrt(x) for x in %s]" % dataList
     print "And checking for 'p' in our pool"
@@ -46,7 +46,7 @@ def context2():
     # We inherit a pool with 'p' in it --- it's the same pool as before
     pool2.storeDel("p") # Now there's no 'p' in our pool...
     print pool2.mapNoBalance(test1, True, dataList, *fruit, **veges)
-    pool2.storeSet("p", 2)
+    pool2.storeSet(p=2)
     pool2.storeClear()
     print pool2.mapToPrevious(test2, dataList, *fruit, **veges)
 

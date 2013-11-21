@@ -387,10 +387,11 @@ class PoolNode(object):
             return [func(self._getCache(i), data, *args, **kwargs) for i, data in queue]
         return [func(data, *args, **kwargs) for i, data in queue]
 
-    def storeSet(self, name, value):
-        """Set value in store"""
-        self.log("storing", name, value)
-        self._store[name] = value
+    def storeSet(self, **kwargs):
+        """Set values in store"""
+        self.log("storing", kwargs)
+        for name, value in kwargs.iteritems():
+            self._store[name] = value
 
     def storeDel(self, *nameList):
         """Delete value in store"""
@@ -661,7 +662,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def storeSet(self, name, value):
+    def storeSet(self, **kwargs):
         """Store data on slave
 
         The data is made available to functions through the cache. The
@@ -669,13 +670,12 @@ class PoolMaster(PoolNode):
         all operations, whereas the cache is specific to the data being
         operated upon.
 
-        @param name: name of data to store
-        @param value: value to store
+        @param kwargs: dict of name=value pairs
         """
-        super(PoolMaster, self).storeSet(name, value)
+        super(PoolMaster, self).storeSet(**kwargs)
         self.command("storeSet")
         self.log("give data")
-        self.comm.broadcast((name, value), root=self.rank)
+        self.comm.broadcast(kwargs, root=self.rank)
         self.log("done")
 
     @abortOnError
@@ -806,8 +806,8 @@ class PoolSlave(PoolNode):
 
     def storeSet(self):
         """Set value in store"""
-        name, value = self.comm.broadcast(None, root=self.root)
-        super(PoolSlave, self).storeSet(name, value)
+        kwargs = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).storeSet(**kwargs)
 
     def storeDel(self):
         """Delete value in store"""
