@@ -168,7 +168,7 @@ class Pbs(object):
         print >>f, "eups list -s"
         print >>f, "export"
         print >>f, "cd %s" % os.getcwd()
-        print >>f, "mpiexec --verbose %s %s" % (self.mpiexec, command)
+        print >>f, "mpiexec %s %s" % (self.mpiexec, command)
         f.close()
         os.chmod(script, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return script
