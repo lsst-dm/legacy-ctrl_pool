@@ -20,7 +20,7 @@ import sys
 import time
 import types
 import copy_reg
-from functools import wraps
+from functools import wraps, partial
 from contextlib import contextmanager
 
 import mpi4py.MPI as mpi
@@ -300,7 +300,7 @@ class SingletonMeta(type):
       "__new__" in the class).
     """
     def __init__(self, name, bases, dict_):
-        super(SingletonMeta, self).__init__(name, bases, dict)
+        super(SingletonMeta, self).__init__(name, bases, dict_)
         self._instance = None
 
     def __call__(self, *args, **kwargs):
@@ -344,7 +344,7 @@ class PoolNode(object):
     cause a segmentation fault (signal 11).
     """
     __metaclass__ = SingletonMeta
-    def __init__(self, comm, root=0):
+    def __init__(self, comm=Comm(), root=0):
         self.comm = comm
         self.rank = self.comm.rank
         self.root = root
@@ -352,16 +352,23 @@ class PoolNode(object):
         self._cache = {}
         self._store = {}
         self.debugger = Debugger()
+        self.node = "%s:%d" % (os.uname()[1], os.getpid())
 
-    def _getCache(self, index):
+    def _getCache(self, context, index):
         """Retrieve cache for particular data
 
         The cache is updated with the contents of the store.
         """
-        if index not in self._cache:
-            self._cache[index] = Cache(self.comm)
-        self._cache[index].__dict__.update(self._store)
-        return self._cache[index]
+        if not context in self._cache:
+            self._cache[context] = {}
+        if not context in self._store:
+            self._store[context] = {}
+        cache = self._cache[context]
+        store = self._store[context]
+        if index not in cache:
+            cache[index] = Cache(self.comm)
+        cache[index].__dict__.update(store)
+        return cache[index]
 
     def log(self, msg, *args):
         """Log a debugging message"""
@@ -370,7 +377,7 @@ class PoolNode(object):
     def isMaster(self):
         return self.rank == self.root
 
-    def _processQueue(self, func, passCache, queue, *args, **kwargs):
+    def _processQueue(self, context, func, queue, *args, **kwargs):
         """Process a queue of data
 
         The queue consists of a list of (index, data) tuples,
@@ -378,37 +385,52 @@ class PoolNode(object):
         passed to the 'func'.
 
         @param func: function for slaves to run
-        @param passCache: True to pass a cache instance to func
+        @param context: Namespace for cache; None to not use cache
         @param queue: List of (index,data) tuples to process
         @param args: Constant arguments
         @return list of results from applying 'func' to dataList
         """
-        if passCache:
-            return [func(self._getCache(i), data, *args, **kwargs) for i, data in queue]
+        if context is not None:
+            return [func(self._getCache(context, i), data, *args, **kwargs) for i, data in queue]
         return [func(data, *args, **kwargs) for i, data in queue]
 
-    def storeSet(self, **kwargs):
+    def storeSet(self, context, **kwargs):
         """Set values in store"""
-        self.log("storing", kwargs)
+        self.log("storing", context, kwargs)
+        if not context in self._store:
+            self._store[context] = {}
         for name, value in kwargs.iteritems():
-            self._store[name] = value
+            self._store[context][name] = value
 
-    def storeDel(self, *nameList):
+    def storeDel(self, context, *nameList):
         """Delete value in store"""
-        self.log("deleting from store", nameList)
+        self.log("deleting from store", context, nameList)
+        if not context in self._store:
+            raise KeyError("No such context: %s" % context)
         for name in nameList:
-            del self._store[name]
+            del self._store[context][name]
 
-    def storeClear(self):
+    def storeClear(self, context):
         """Clear stored data"""
-        self.log("clearing store")
-        self._store = {}
+        self.log("clearing store", context)
+        if not context in self._cache:
+            raise KeyError("No such context: %s" % context)
+        self._store[context] = {}
 
-    def clearCache(self):
+    def clearCache(self, context):
         """Reset cache"""
-        self.log("clearing cache")
-        self._cache = {}
+        self.log("clearing cache", context)
+        if not context in self._cache:
+            raise KeyError("No such context: %s" % context)
+        self._cache[context] = {}
 
+    def listCache(self, context):
+        """List contents of cache"""
+        sys.stderr.write("Cache on %s (%s): %s\n" % (self.node, context, self._cache[context]))
+
+    def listStore(self, context):
+        """List contents of store"""
+        sys.stderr.write("Store on %s (%s): %s\n" % (self.node, context, self._store[context]))
 
 class PoolMaster(PoolNode):
     """Master node instance of MPI process pool
@@ -427,16 +449,6 @@ class PoolMaster(PoolNode):
         """Ensure slaves exit when we're done"""
         self.exit()
 
-    def _getCache(self, index):
-        """Retrieve cache for particular data
-
-        The cache is updated with the contents of the store.
-        """
-        if index not in self._cache:
-            self._cache[index] = Cache(self.comm)
-        self._cache[index].__dict__.update(self._store)
-        return self._cache[index]
-
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Master", msg, *args)
@@ -451,7 +463,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def map(self, func, passCache, dataList, *args, **kwargs):
+    def map(self, context, func, dataList, *args, **kwargs):
         """Scatter work to slaves and gather the results
 
         Work is distributed dynamically, so that slaves that finish
@@ -465,10 +477,10 @@ class PoolMaster(PoolNode):
         data that has been stored on the slaves.
 
         The 'func' signature should be func(cache, data, *args, **kwargs)
-        if 'passCache' is true; otherwise func(data, *args, **kwargs).
+        if 'context' is non-None; otherwise func(data, *args, **kwargs).
 
+        @param context: Namespace for cache
         @param func: function for slaves to run; must be picklable
-        @param passCache: True to pass a cache instance to func
         @param dataList: List of data to distribute to slaves; must be picklable
         @param args: List of constant arguments
         @param kwargs: Dict of constant arguments
@@ -477,16 +489,16 @@ class PoolMaster(PoolNode):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(func, passCache, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.mapNoBalance(func, passCache, dataList, *args, **kwargs)
+            return self.mapNoBalance(context, func, dataList, *args, **kwargs)
 
         self.command("map")
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs, passCache), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, context), root=self.rank)
 
         # Parcel out first set of data
         queue = zip(range(num), dataList) # index, data
@@ -506,7 +518,7 @@ class PoolMaster(PoolNode):
 
             if queue:
                 job = queue.pop(0)
-                self.log("send job to slave", source)
+                self.log("send job to slave", job[0], source)
             else:
                 job = NoOp()
                 pending -= 1
@@ -517,7 +529,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def mapNoBalance(self, func, passCache, dataList, *args, **kwargs):
+    def mapNoBalance(self, context, func, dataList, *args, **kwargs):
         """Scatter work to slaves and gather the results
 
         Work is distributed statically, so there is no load balancing.
@@ -530,10 +542,10 @@ class PoolMaster(PoolNode):
         data that has been stored on the slaves.
 
         The 'func' signature should be func(cache, data, *args, **kwargs)
-        if 'passCache' is true; otherwise func(data, *args, **kwargs).
+        if 'context' is true; otherwise func(data, *args, **kwargs).
 
+        @param context: Namespace for cache
         @param func: function for slaves to run; must be picklable
-        @param passCache: True to pass a cache instance to func
         @param dataList: List of data to distribute to slaves; must be picklable
         @param args: List of constant arguments
         @param kwargs: Dict of constant arguments
@@ -542,13 +554,13 @@ class PoolMaster(PoolNode):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(func, passCache, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
 
         self.command("mapNoBalance")
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs, passCache), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, context), root=self.rank)
 
         # Divide up the jobs
         # Try to give root the least to do, so it also has time to manage
@@ -585,7 +597,7 @@ class PoolMaster(PoolNode):
                 index = distList[i][0]
                 resultList[index] = result
 
-        ourResults = self._processQueue(func, passCache, distribution[self.rank], *args, **kwargs)
+        ourResults = self._processQueue(context, func, distribution[self.rank], *args, **kwargs)
         ingestResults(ourResults, distribution[self.rank])
 
         # Collect results
@@ -603,7 +615,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def mapToPrevious(self, func, dataList, *args, **kwargs):
+    def mapToPrevious(self, context, func, dataList, *args, **kwargs):
         """Scatter work to the same target as before
 
         Work is distributed so that each slave handles the same
@@ -612,12 +624,15 @@ class PoolMaster(PoolNode):
 
         The 'func' signature should be func(cache, data, *args, **kwargs).
 
+        @param context: Namespace for cache
         @param func: function for slaves to run; must be picklable
         @param dataList: List of data to distribute to slaves; must be picklable
         @param args: List of constant arguments
         @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
+        if context is None:
+            raise ValueError("context must be set to map to same nodes as previous context")
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
@@ -631,7 +646,7 @@ class PoolMaster(PoolNode):
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, context), root=self.rank)
 
         requestList = self.comm.gather(root=self.rank)
         self.log("listen", requestList)
@@ -662,7 +677,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     @catchPicklingError
-    def storeSet(self, **kwargs):
+    def storeSet(self, context, **kwargs):
         """Store data on slave
 
         The data is made available to functions through the cache. The
@@ -672,19 +687,19 @@ class PoolMaster(PoolNode):
 
         @param kwargs: dict of name=value pairs
         """
-        super(PoolMaster, self).storeSet(**kwargs)
+        super(PoolMaster, self).storeSet(context, **kwargs)
         self.command("storeSet")
         self.log("give data")
-        self.comm.broadcast(kwargs, root=self.rank)
+        self.comm.broadcast((context, kwargs), root=self.rank)
         self.log("done")
 
     @abortOnError
-    def storeDel(self, *nameList):
+    def storeDel(self, context, *nameList):
         """Delete stored data on slave"""
-        super(PoolMaster, self).storeDel(*nameList)
+        super(PoolMaster, self).storeDel(context, *nameList)
         self.command("storeDel")
         self.log("tell names")
-        self.comm.broadcast(nameList, root=self.rank)
+        self.comm.broadcast((context, nameList), root=self.rank)
         self.log("done")
 
     @abortOnError
@@ -695,15 +710,27 @@ class PoolMaster(PoolNode):
         """
         super(PoolMaster, self).storeClear()
         self.command("storeClear")
+        self.comm.broadcast(context, root=self.rank)
 
     @abortOnError
-    def clearCache(self):
+    def clearCache(self, context):
         """Reset cache
 
         Slave caches are reset.
         """
         super(PoolMaster, self).clearCache()
         self.command("clearCache")
+        self.comm.broadcast(context, root=self.rank)
+
+    def listCache(self, context):
+        super(PoolMaster, self).listCache()
+        self.command("listCache")
+        self.comm.broadcast(context, root=self.rank)
+
+    def listStore(self, context):
+        super(PoolMaster, self).listStore()
+        self.command("listStore")
+        self.comm.broadcast(context, root=self.rank)
 
     def exit(self):
         """Command slaves to exit"""
@@ -716,16 +743,6 @@ class PoolSlave(PoolNode):
         """Log a debugging message"""
         self.debugger.log("Slave %d" % self.rank, msg, *args)
 
-    def _getCache(self, index):
-        """Retrieve cache for particular data
-
-        The cache is updated with the contents of the store.
-        """
-        if index not in self._cache:
-            self._cache[index] = Cache(self.comm)
-        self._cache[index].__dict__.update(self._store)
-        return self._cache[index]
-
     @abortOnError
     def run(self):
         """Serve commands of master node
@@ -734,8 +751,8 @@ class PoolSlave(PoolNode):
         This exits when a command returns a true value.
         """
         menu = dict((cmd, getattr(self, cmd)) for cmd in ("map", "mapNoBalance", "mapToPrevious",
-                                                          "storeSet", "storeDel", "storeClear",
-                                                          "clearCache", "exit",))
+                                                          "storeSet", "storeDel", "storeClear", "listStore",
+                                                          "listCache", "clearCache", "exit",))
         self.log("waiting for command from", self.root)
         command = self.comm.broadcast(None, root=self.root)
         self.log("command", command)
@@ -749,14 +766,14 @@ class PoolSlave(PoolNode):
     def map(self):
         """Process scattered data and return results"""
         self.log("waiting for instruction")
-        tags, func, args, kwargs, passCache = self.comm.broadcast(None, root=self.root)
+        tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
         job = self.comm.scatter(root=self.root)
 
         while not isinstance(job, NoOp):
             index, data = job
             self.log("running job")
-            result = self._processQueue(func, passCache, [(index, data)], *args, **kwargs)[0]
+            result = self._processQueue(context, func, [(index, data)], *args, **kwargs)[0]
             self.comm.send((index, result), self.root, tag=tags.result)
             self.log("waiting for job")
             job = self.comm.recv(tag=tags.work, source=self.root)
@@ -767,14 +784,14 @@ class PoolSlave(PoolNode):
     def mapNoBalance(self):
         """Process bulk scattered data and return results"""
         self.log("waiting for instruction")
-        tags, func, args, kwargs, passCache = self.comm.broadcast(None, root=self.root)
+        tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
         queue = self.comm.recv(tag=tags.work, source=self.root)
 
         resultList = []
         for index, data in queue:
             self.log("running job", index)
-            result = self._processQueue(func, passCache, [(index, data)], *args, **kwargs)[0]
+            result = self._processQueue(context, func, [(index, data)], *args, **kwargs)[0]
             resultList.append(result)
 
         self.comm.send(resultList, self.root, tag=tags.result)
@@ -784,8 +801,8 @@ class PoolSlave(PoolNode):
     def mapToPrevious(self):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
-        tags, func, args, kwargs = self.comm.broadcast(None, root=self.root)
-        queue = self._cache.keys()
+        tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
+        queue = self._cache[context].keys()
         index = queue.pop(0) if queue else -1
         self.log("request job", index)
         self.comm.gather(index, root=self.root)
@@ -794,7 +811,7 @@ class PoolSlave(PoolNode):
 
         while index >= 0:
             self.log("running job")
-            result = func(self._getCache(index), data, *args, **kwargs)
+            result = func(self._getCache(context, index), data, *args, **kwargs)
             self.log("pending", queue)
             nextIndex = queue.pop(0) if queue else -1
             self.comm.send((index, result, nextIndex), self.root, tag=tags.result)
@@ -806,40 +823,59 @@ class PoolSlave(PoolNode):
 
     def storeSet(self):
         """Set value in store"""
-        kwargs = self.comm.broadcast(None, root=self.root)
-        super(PoolSlave, self).storeSet(**kwargs)
+        context, kwargs = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).storeSet(context, **kwargs)
 
     def storeDel(self):
         """Delete value in store"""
-        nameList = self.comm.broadcast(None, root=self.root)
-        super(PoolSlave, self).storeDel(*nameList)
+        context, nameList = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).storeDel(context, *nameList)
 
     def exit(self):
         """Allow exit from loop in 'run'"""
         return True
 
+    def storeClear(self):
+        """Reset data store"""
+        context = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).storeClear(context)
 
-class PoolMeta(SingletonMeta):
-    """Generate the appropriate subclass
+    def clearCache(self):
+        """Reset cache"""
+        context = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).clearCache(context)
 
-    Required to inherit from SingletonMeta because PoolNode has
-    that as its metaclass.
-    """
-    def __call__(self, comm=Comm(), root=0):
-        """Singleton pattern, while choosing the correct specialisation"""
-        if self._instance is not None:
-            return self._instance
-        cls = PoolMaster if comm.rank == root else PoolSlave
-        self._instance = cls(comm, root=root)
-        return self._instance
+    def listCache(self):
+        context = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).listCache(context)
 
-class Pool(PoolNode):
-    """Generic pool object
+    def listStore(self):
+        context = self.comm.broadcast(None, root=self.root)
+        super(PoolSlave, self).listStore(context)
 
-    Will be specialised appropriately by metaclass
-    """
-    __metaclass__ = PoolMeta
 
+class PoolWrapperMeta(type):
+    """Metaclass for PoolWrapper to add methods pointing to PoolMaster"""
+    def __call__(self, context="default"):
+        instance = super(PoolWrapperMeta, self).__call__(context)
+        pool = PoolMaster()
+        for name in ("map", "mapNoBalance", "mapToPrevious", "storeSet", "storeDel", "storeClear", "listStore",
+                     "listCache", "clearCache",):
+            setattr(instance, name, partial(getattr(pool, name), context))
+        return instance
+
+class PoolWrapper(object):
+    """Wrap PoolMaster to automatically provide context"""
+    __metaclass__ = PoolWrapperMeta
+    def __init__(self, context="default"):
+        self._pool = PoolMaster._instance
+        self._context = context
+    def __getattr__(self, name):
+        return getattr(self._pool, name)
+
+class Pool(PoolWrapper):
+    """Pool object"""
+    pass
 
 def startPool(comm=Comm(), root=0, killSlaves=True):
     """
@@ -861,13 +897,14 @@ def startPool(comm=Comm(), root=0, killSlaves=True):
     @param root: Rank of root/master node
     @param killSlaves: Kill slaves on completion?
     """
-    pool = Pool(comm, root=root)
-    if not pool.isMaster():
-        pool.run()
-        if killSlaves:
-            del pool # Required to prevent segmentation fault on exit
-            exit()
-    return pool
+    if comm.rank == root:
+        return PoolMaster(comm, root=root)
+    slave = PoolSlave(comm, root=root)
+    slave.run()
+    if killSlaves:
+        del slave # Required to prevent segmentation fault on exit
+        exit()
+    return slave
 
 
 class PoolDecorator(object):
