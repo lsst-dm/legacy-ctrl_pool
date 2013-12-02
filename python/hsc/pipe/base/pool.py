@@ -640,7 +640,7 @@ class PoolMaster(PoolNode):
             return self._processQueue(func, True, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.mapNoBalance(func, True, dataList, *args, **kwargs)
+            return self.mapNoBalance(context, func, dataList, *args, **kwargs)
 
         self.command("mapToPrevious")
 
