@@ -637,7 +637,7 @@ class PoolMaster(PoolNode):
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return self._processQueue(func, True, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
             return self.mapNoBalance(context, func, dataList, *args, **kwargs)
