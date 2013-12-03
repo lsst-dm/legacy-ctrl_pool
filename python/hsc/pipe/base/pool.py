@@ -27,8 +27,9 @@ import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
 
-__all__ = ["Comm", "Pool", "startPool", "abortOnError",]
+__all__ = ["Comm", "Pool", "startPool", "abortOnError", "NODE", ]
 
+NODE = "%s:%d" % (os.uname()[1], os.getpid()) # Name of node
 
 def unpickleInstanceMethod(obj, name):
     """Unpickle an instance method
