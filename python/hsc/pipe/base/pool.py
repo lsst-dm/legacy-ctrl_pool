@@ -280,7 +280,11 @@ class Tags(object):
         return self.__class__, tuple(self._nameList)
 
 class Cache(Struct):
-    """An object to hold stuff between different scatter calls"""
+    """An object to hold stuff between different scatter calls
+
+    Includes a communicator by default, to allow intercommunication
+    between nodes.
+    """
     def __init__(self, comm):
         super(Cache, self).__init__(comm=comm)
 
@@ -385,8 +389,8 @@ class PoolNode(object):
         where the index maps to the cache, and the data is
         passed to the 'func'.
 
-        @param func: function for slaves to run
         @param context: Namespace for cache; None to not use cache
+        @param func: function for slaves to run
         @param queue: List of (index,data) tuples to process
         @param args: Constant arguments
         @return list of results from applying 'func' to dataList
@@ -396,7 +400,7 @@ class PoolNode(object):
         return [func(data, *args, **kwargs) for i, data in queue]
 
     def storeSet(self, context, **kwargs):
-        """Set values in store"""
+        """Set values in store for a particular context"""
         self.log("storing", context, kwargs)
         if not context in self._store:
             self._store[context] = {}
@@ -404,7 +408,7 @@ class PoolNode(object):
             self._store[context][name] = value
 
     def storeDel(self, context, *nameList):
-        """Delete value in store"""
+        """Delete value in store for a particular context"""
         self.log("deleting from store", context, nameList)
         if not context in self._store:
             raise KeyError("No such context: %s" % context)
@@ -412,25 +416,28 @@ class PoolNode(object):
             del self._store[context][name]
 
     def storeClear(self, context):
-        """Clear stored data"""
+        """Clear stored data for a particular context"""
         self.log("clearing store", context)
-        if not context in self._cache:
+        if not context in self._store:
             raise KeyError("No such context: %s" % context)
         self._store[context] = {}
 
-    def clearCache(self, context):
-        """Reset cache"""
+    def cacheClear(self, context):
+        """Reset cache for a particular context"""
         self.log("clearing cache", context)
         if not context in self._cache:
-            raise KeyError("No such context: %s" % context)
+            return
         self._cache[context] = {}
 
-    def listCache(self, context):
+    def cacheList(self, context):
         """List contents of cache"""
-        sys.stderr.write("Cache on %s (%s): %s\n" % (self.node, context, self._cache[context]))
+        cache = self._cache[context] if context in self._cache else {}
+        sys.stderr.write("Cache on %s (%s): %s\n" % (self.node, context, cache))
 
-    def listStore(self, context):
-        """List contents of store"""
+    def storeList(self, context):
+        """List contents of store for a particular context"""
+        if not context in self._store:
+            raise KeyError("No such context: %s" % context)
         sys.stderr.write("Store on %s (%s): %s\n" % (self.node, context, self._store[context]))
 
 class PoolMaster(PoolNode):
@@ -623,6 +630,9 @@ class PoolMaster(PoolNode):
         indices in the dataList as when 'map' was called.
         This allows the right data to go to the right cache.
 
+        It is assumed that the dataList is the same length as when it was
+        passed to 'map'.
+
         The 'func' signature should be func(cache, data, *args, **kwargs).
 
         @param context: Namespace for cache
@@ -679,7 +689,7 @@ class PoolMaster(PoolNode):
     @abortOnError
     @catchPicklingError
     def storeSet(self, context, **kwargs):
-        """Store data on slave
+        """Store data on slave for a particular context
 
         The data is made available to functions through the cache. The
         stored data differs from the cache in that it is identical for
@@ -696,7 +706,7 @@ class PoolMaster(PoolNode):
 
     @abortOnError
     def storeDel(self, context, *nameList):
-        """Delete stored data on slave"""
+        """Delete stored data on slave for a particular context"""
         super(PoolMaster, self).storeDel(context, *nameList)
         self.command("storeDel")
         self.log("tell names")
@@ -704,33 +714,31 @@ class PoolMaster(PoolNode):
         self.log("done")
 
     @abortOnError
-    def storeClear(self):
-        """Reset data store
-
-        Slave data stores are reset.
-        """
-        super(PoolMaster, self).storeClear()
+    def storeClear(self, context):
+        """Reset data store for a particular context on master and slaves"""
+        super(PoolMaster, self).storeClear(context)
         self.command("storeClear")
         self.comm.broadcast(context, root=self.rank)
 
     @abortOnError
-    def clearCache(self, context):
-        """Reset cache
-
-        Slave caches are reset.
-        """
-        super(PoolMaster, self).clearCache()
-        self.command("clearCache")
+    def cacheClear(self, context):
+        """Reset cache for a particular context on master and slaves"""
+        super(PoolMaster, self).cacheClear(context)
+        self.command("cacheClear")
         self.comm.broadcast(context, root=self.rank)
 
-    def listCache(self, context):
-        super(PoolMaster, self).listCache()
-        self.command("listCache")
+    @abortOnError
+    def cacheList(self, context):
+        """List cache contents for a particular context on master and slaves"""
+        super(PoolMaster, self).cacheList(context)
+        self.command("cacheList")
         self.comm.broadcast(context, root=self.rank)
 
-    def listStore(self, context):
-        super(PoolMaster, self).listStore()
-        self.command("listStore")
+    @abortOnError
+    def storeList(self, context):
+        """List store contents for a particular context on master and slaves"""
+        super(PoolMaster, self).storeList(context)
+        self.command("storeList")
         self.comm.broadcast(context, root=self.rank)
 
     def exit(self):
@@ -752,8 +760,8 @@ class PoolSlave(PoolNode):
         This exits when a command returns a true value.
         """
         menu = dict((cmd, getattr(self, cmd)) for cmd in ("map", "mapNoBalance", "mapToPrevious",
-                                                          "storeSet", "storeDel", "storeClear", "listStore",
-                                                          "listCache", "clearCache", "exit",))
+                                                          "storeSet", "storeDel", "storeClear", "storeList",
+                                                          "cacheList", "cacheClear", "exit",))
         self.log("waiting for command from", self.root)
         command = self.comm.broadcast(None, root=self.root)
         self.log("command", command)
@@ -832,36 +840,41 @@ class PoolSlave(PoolNode):
         context, nameList = self.comm.broadcast(None, root=self.root)
         super(PoolSlave, self).storeDel(context, *nameList)
 
-    def exit(self):
-        """Allow exit from loop in 'run'"""
-        return True
-
     def storeClear(self):
         """Reset data store"""
         context = self.comm.broadcast(None, root=self.root)
         super(PoolSlave, self).storeClear(context)
 
-    def clearCache(self):
+    def cacheClear(self):
         """Reset cache"""
         context = self.comm.broadcast(None, root=self.root)
-        super(PoolSlave, self).clearCache(context)
+        super(PoolSlave, self).cacheClear(context)
 
-    def listCache(self):
+    def cacheList(self):
+        """List cache contents"""
         context = self.comm.broadcast(None, root=self.root)
-        super(PoolSlave, self).listCache(context)
+        super(PoolSlave, self).cacheList(context)
 
-    def listStore(self):
+    def storeList(self):
+        """List store contents"""
         context = self.comm.broadcast(None, root=self.root)
-        super(PoolSlave, self).listStore(context)
+        super(PoolSlave, self).storeList(context)
+
+    def exit(self):
+        """Allow exit from loop in 'run'"""
+        return True
 
 
 class PoolWrapperMeta(type):
-    """Metaclass for PoolWrapper to add methods pointing to PoolMaster"""
+    """Metaclass for PoolWrapper to add methods pointing to PoolMaster
+
+    The 'context' is automatically supplied to these methods as the first argument.
+    """
     def __call__(self, context="default"):
         instance = super(PoolWrapperMeta, self).__call__(context)
         pool = PoolMaster()
-        for name in ("map", "mapNoBalance", "mapToPrevious", "storeSet", "storeDel", "storeClear", "listStore",
-                     "listCache", "clearCache",):
+        for name in ("map", "mapNoBalance", "mapToPrevious", "storeSet", "storeDel", "storeClear", "storeList",
+                     "cacheList", "cacheClear",):
             setattr(instance, name, partial(getattr(pool, name), context))
         return instance
 
@@ -875,7 +888,14 @@ class PoolWrapper(object):
         return getattr(self._pool, name)
 
 class Pool(PoolWrapper):
-    """Pool object"""
+    # Just gives PoolWrapper a nicer name for the user
+    """Process Pool
+
+    Use this class to automatically provide 'context' to
+    the PoolMaster class.  If you want to call functions
+    that don't take a 'cache' object, use the PoolMaster
+    class directly, and specify context=None.
+    """
     pass
 
 def startPool(comm=Comm(), root=0, killSlaves=True):

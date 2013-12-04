@@ -4,6 +4,10 @@
 #
 #    mpiexec -n <number of nodes> /path/to/demoPool.py"
 #
+# I suggest running with n=1, 3, NUM nodes to cover all the operational modes.
+#
+
+NUM = 10 # Number of items in data list
 
 import math
 def test1(cache, data, *args, **kwargs):
@@ -27,7 +31,7 @@ Debugger().enabled = True
 
 startPool()
 
-dataList = map(float, range(10))
+dataList = map(float, range(NUM))
 
 def context1(pool1):
     pool1.storeSet(p=1)
@@ -43,10 +47,23 @@ def context2(pool2):
     print pool2.mapNoBalance(test1, dataList, *fruit, **veges)
     print pool2.mapToPrevious(test2, dataList, *fruit, **veges)
 
+def context3(pool3):
+    # Check cache/store functionality
+    pool3.storeSet(p=1, q=2)
+    print pool1.map(test1, dataList, "foo", foo="bar")
+    pool3.storeDel("p")
+    pool3.storeList()
+    pool1.cacheList()
+    pool1.cacheClear()
+    pool3.storeClear()
+    pool3.storeList()
+
 pool1 = Pool(1)
 context1(pool1)
 pool2 = Pool(2)
 context2(pool2)
+pool3 = Pool(3)
+context3(pool3)
 
 Pool().exit() # This is important, to bring everything down nicely; or the wheels will just keep turning
 # Can do stuff here, just not use any MPI because the slaves have exited.
