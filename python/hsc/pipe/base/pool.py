@@ -811,7 +811,7 @@ class PoolSlave(PoolNode):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
         tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
-        queue = self._cache[context].keys()
+        queue = self._cache[context].keys() if context in self._cache else None
         index = queue.pop(0) if queue else -1
         self.log("request job", index)
         self.comm.gather(index, root=self.root)
