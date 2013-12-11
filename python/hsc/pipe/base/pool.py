@@ -203,7 +203,7 @@ class Comm(mpi.Intracomm):
     * http://code.google.com/p/mpi4py/issues/detail?id=4 and
     * https://groups.google.com/forum/?fromgroups=#!topic/mpi4py/nArVuMXyyZI
     """
-    def __new__(cls, comm=mpi.COMM_WORLD, recvSleep=1.0, barrierSleep=1.0):
+    def __new__(cls, comm=mpi.COMM_WORLD, recvSleep=0.1, barrierSleep=0.1):
         """Construct an MPI.Comm wrapper
 
         @param comm            MPI.Intracomm to wrap a duplicate of
