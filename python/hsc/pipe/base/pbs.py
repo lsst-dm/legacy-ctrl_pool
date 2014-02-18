@@ -14,6 +14,8 @@ import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
 from hsc.pipe.base.pool import startPool
 
+UMASK = "002" # umask to set
+
 # Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
 # http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
 _quote_pos = re.compile('(?=[^-0-9a-zA-Z_./\n])')
@@ -159,11 +161,11 @@ class Pbs(object):
         if self.queue is not None:
             print >>f, "#PBS -q %s" % self.queue
         print >>f, "#PBS -j oe"
-        print >>f, "#PBS -W umask=02"
+        print >>f, "#PBS -W umask=%s" % UMASK
         print >>f, exportEnv()
         print >>f, "echo \"mpiexec is at: $(which mpiexec)\""
         print >>f, "ulimit -a"
-        print >>f, "umask 02"
+        print >>f, "umask %s" % UMASK
         print >>f, "echo 'umask: ' $(umask)"
         print >>f, "eups list -s"
         print >>f, "export"
@@ -252,8 +254,9 @@ class PbsCmdLineTask(CmdLineTask):
         @param args: Parsed PBS arguments (from PbsArgumentParser)
         """
         module = cls.__module__
-        return ("python -c 'import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
-                "import %s; %s.%s.parseAndRun()' %s") % (args.job, module, module, cls.__name__,
+        return ("python -c 'import os; os.umask %s; " +
+                "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
+                "import %s; %s.%s.parseAndRun()' %s") % (UMASK, args.job, module, module, cls.__name__,
                                                          shCommandFromArgs(args.leftover))
 
 
