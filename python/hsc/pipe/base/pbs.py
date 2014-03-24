@@ -254,7 +254,7 @@ class PbsCmdLineTask(CmdLineTask):
         @param args: Parsed PBS arguments (from PbsArgumentParser)
         """
         module = cls.__module__
-        return ("python -c 'import os; os.umask %s; " +
+        return ("python -c 'import os; os.umask(%s); " +
                 "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
                 "import %s; %s.%s.parseAndRun()' %s") % (UMASK, args.job, module, module, cls.__name__,
                                                          shCommandFromArgs(args.leftover))
