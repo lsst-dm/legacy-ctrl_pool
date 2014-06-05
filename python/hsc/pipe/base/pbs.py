@@ -9,10 +9,12 @@ import stat
 import sys
 import tempfile
 import argparse
+import traceback
+import contextlib
 import lsst.pex.logging as pexLog
 import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
-from hsc.pipe.base.pool import startPool
+from hsc.pipe.base.pool import startPool, NODE
 
 UMASK = "002" # umask to set
 
@@ -259,6 +261,30 @@ class PbsCmdLineTask(CmdLineTask):
                 "import %s; %s.%s.parseAndRun()' %s") % (UMASK, args.job, module, module, cls.__name__,
                                                          shCommandFromArgs(args.leftover))
 
+    @contextlib.contextmanager
+    def logOperation(self, operation, catch=False, trace=True):
+        """Provide a context manager for logging an operation
+
+        @param operation: description of operation (string)
+        @param catch: Catch all exceptions?
+        @param trace: Log a traceback of caught exception?
+
+        Note that if 'catch' is True, all exceptions are swallowed, but there may
+        be other side-effects such as undefined variables.
+        """
+        self.log.info("%s: Start %s" % (NODE, operation))
+        try:
+            yield
+        except:
+            if catch:
+                cls, e, _ = sys.exc_info()
+                self.log.warn("%s: Caught %s while %s: %s" % (NODE, cls.__name__, operation, e))
+                if trace:
+                    self.log.info("%s: Traceback:\n%s" % (NODE, traceback.format_exc()))
+                return
+            raise
+        finally:
+            self.log.info("%s: Finished %s" % (NODE, operation))
 
 class PbsPoolTask(PbsCmdLineTask):
     @classmethod
