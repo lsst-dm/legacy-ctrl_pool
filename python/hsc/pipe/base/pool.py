@@ -255,7 +255,6 @@ class Comm(mpi.Intracomm):
 
     def broadcast(self, value, root=0):
         with PickleHolder(value):
-            self.Barrier()
             return super(Comm, self).bcast(value, root=root)
 
     def Free(self):
