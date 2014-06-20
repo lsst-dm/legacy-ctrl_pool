@@ -220,6 +220,8 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--batch-type", dest="batchType", choices=BATCH_TYPES.keys(), default="pbs",
                            help="Batch system to use")
         group.add_argument("--batch-output", dest="batchOutput", help="Output directory")
+        group.add_argument("--batch-profile", dest="batchProfile", action="store_true", default=False,
+                           help="Enable profiling on batch job?")
         group.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
                            help="Dry run?")
         group.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
@@ -336,10 +338,15 @@ class BatchCmdLineTask(CmdLineTask):
         @param args: Parsed batch job arguments (from BatchArgumentParser)
         """
         module = cls.__module__
-        return ("python -c 'import os; os.umask(%s); " +
-                "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
-                "import %s; %s.%s.parseAndRun()' %s") % (UMASK, args.job, module, module, cls.__name__,
-                                                         shCommandFromArgs(args.leftover))
+        script = ("import os; os.umask(%s); " +
+                  "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
+                  "import %s; %s.%s.parseAndRun();") % (UMASK, args.job, module, module, cls.__name__)
+
+        profilePre = "import cProfile; import os; cProfile.run(\"\"\""
+        profilePost = "\"\"\", filename=\"profile-" + args.job + "-%s-%d.dat\" % (os.uname()[1], os.getpid()))"
+
+        return ("python -c '" + (profilePre if args.batchProfile else "") + script +
+                (profilePost if args.batchProfile else "") + "' " + shCommandFromArgs(args.leftover))
 
     @contextlib.contextmanager
     def logOperation(self, operation, catch=False, trace=True):
