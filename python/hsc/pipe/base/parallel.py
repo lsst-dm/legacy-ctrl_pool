@@ -337,13 +337,14 @@ class BatchCmdLineTask(CmdLineTask):
 
         @param args: Parsed batch job arguments (from BatchArgumentParser)
         """
+        job = args.job if args.job is not None else "job"
         module = cls.__module__
         script = ("import os; os.umask(%s); " +
                   "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
-                  "import %s; %s.%s.parseAndRun();") % (UMASK, args.job, module, module, cls.__name__)
+                  "import %s; %s.%s.parseAndRun();") % (UMASK, job, module, module, cls.__name__)
 
         profilePre = "import cProfile; import os; cProfile.run(\"\"\""
-        profilePost = "\"\"\", filename=\"profile-" + args.job + "-%s-%d.dat\" % (os.uname()[1], os.getpid()))"
+        profilePost = "\"\"\", filename=\"profile-" + job + "-%s-%d.dat\" % (os.uname()[1], os.getpid()))"
 
         return ("python -c '" + (profilePre if args.batchProfile else "") + script +
                 (profilePost if args.batchProfile else "") + "' " + shCommandFromArgs(args.leftover))
