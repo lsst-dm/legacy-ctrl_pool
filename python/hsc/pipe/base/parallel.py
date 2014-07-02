@@ -131,7 +131,7 @@ class Batch(object):
         if self.dryrun:
             print "Would run: %s" % command
         elif self.doExec:
-            os.execl(script, script)
+            os.execl(scriptName, scriptName)
         else:
             os.system(command)
         return scriptName
