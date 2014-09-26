@@ -297,7 +297,13 @@ def exportEnv():
             # This is a function.
             # "Two parentheses, a single space, and a brace"
             # is exactly the same criterion as bash uses.
-            output += "function {key} {val}\nexport -f {key}\n".format(key=key, val=val)
+
+            # From 2014-09-25, the function name is prefixed by 'BASH_FUNC_'
+            # and suffixed by '()', which we have to remove.
+            if key.startswith("BASH_FUNC_") and key.endswith("()"):
+                key = key[10:-2]
+
+            output += "{key} {val}\nexport -f {key}\n".format(key=key, val=val)
         else:
             # This is a variable.
             output += "export {key}='{val}'\n".format(key=key, val=val.replace("'", "'\"'\"'"))
