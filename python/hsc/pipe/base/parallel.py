@@ -14,7 +14,7 @@ import contextlib
 import lsst.pex.logging as pexLog
 import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
-from hsc.pipe.base.pool import startPool, NODE
+from hsc.pipe.base.pool import startPool, NODE, abortOnError
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
            "BatchCmdLineTask", "BatchPoolTask",]
@@ -382,6 +382,7 @@ class BatchCmdLineTask(CmdLineTask):
 
 class BatchPoolTask(BatchCmdLineTask):
     @classmethod
+    @abortOnError
     def parseAndRun(cls, *args, **kwargs):
         """Run with a MPI process pool"""
         pool = startPool()
