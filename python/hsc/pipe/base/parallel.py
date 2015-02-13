@@ -317,6 +317,9 @@ class BatchCmdLineTask(CmdLineTask):
         batchParser = BatchArgumentParser(parent=taskParser)
         batchArgs = batchParser.parse_args(config=cls.ConfigClass(), args=args, **kwargs)
 
+        if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent): # Write config, schema
+            taskParser.error("Error in task preparation")
+
         walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, batchArgs.nodes, batchArgs.procs)
 
         command = cls.batchCommand(batchArgs)
