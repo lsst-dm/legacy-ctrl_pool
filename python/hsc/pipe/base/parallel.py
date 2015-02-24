@@ -315,7 +315,8 @@ class BatchCmdLineTask(CmdLineTask):
     def parseAndSubmit(cls, args=None, **kwargs):
         taskParser = cls._makeArgumentParser(doBatch=True, add_help=False)
         batchParser = BatchArgumentParser(parent=taskParser)
-        batchArgs = batchParser.parse_args(config=cls.ConfigClass(), args=args, **kwargs)
+        batchArgs = batchParser.parse_args(config=cls.ConfigClass(), args=args, override=cls.applyOverrides,
+                                           **kwargs)
 
         if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent): # Write config, schema
             taskParser.error("Error in task preparation")
