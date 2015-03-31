@@ -44,7 +44,7 @@ def shCommandFromArgs(args):
 class Batch(object):
     """Base class for batch submission"""
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, walltime=None,
-                 dryrun=False, doExec=False, mpiexec=""):
+                 dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
         """Constructor
 
         @param outputDir: output directory, or None
@@ -56,6 +56,8 @@ class Batch(object):
         @param dryrun: Dry run (only print actions that would be taken)?
         @param doExec: exec the script instead of submitting to batch system?
         @param mpiexec: options for mpiexec
+        @param submit: command-line options for batch submission (e.g., for qsub, sbatch)
+        @param options: options to append to script header (e.g., #PBS or #SBATCH)
         """
         self.outputDir = outputDir
         self.numNodes = numNodes
@@ -66,6 +68,8 @@ class Batch(object):
         self.dryrun = dryrun
         self.doExec = doExec
         self.mpiexec = mpiexec
+        self.submit = submit
+        self.options = options
 
     def shebang(self):
         return "#!/bin/bash"
@@ -142,7 +146,9 @@ class PbsBatch(Batch):
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
-        return "\n".join(["#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
+        return "\n".join([
+                          "#PBS %s" % self.options if self.options is not None else "",
+                          "#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
                           "#PBS -l walltime=%d" % walltime if walltime is not None else "",
                           "#PBS -o %s" % self.outputDir if self.outputDir is not None else "",
                           "#PBS -N %s" % self.jobName if self.jobName is not None else "",
@@ -152,7 +158,7 @@ class PbsBatch(Batch):
                           ])
 
     def submitCommand(self, scriptName):
-        return "qsub -V %s" % scriptName
+        return "qsub %s -V %s" % (self.submit if self.submit is not None else "", scriptName)
 
 class SlurmBatch(Batch):
     """Batch submission with Slurm"""
@@ -168,10 +174,11 @@ class SlurmBatch(Batch):
                           "#SBATCH -p %s" % self.queue if self.queue is not None else "",
                           "#SBATCH --output=%s" % filename,
                           "#SBATCH --error=%s" % filename,
+                          "#SBATCH %s" % self.options if self.options is not None else "",
                           ])
 
     def submitCommand(self, scriptName):
-        return "sbatch %s" % scriptName
+        return "sbatch %s %s" % (self.options if self.options is not None else "", scriptName)
 
 class SmpBatch(Batch):
     """Not-really-Batch submission with multiple cores on the current node
@@ -220,6 +227,8 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--batch-type", dest="batchType", choices=BATCH_TYPES.keys(), default="pbs",
                            help="Batch system to use")
         group.add_argument("--batch-output", dest="batchOutput", help="Output directory")
+        group.add_argument("--batch-submit", dest="batchSubmit", help="Batch submission command-line flags")
+        group.add_argument("--batch-options", dest="batchOptions", help="Header options for batch script")
         group.add_argument("--batch-profile", dest="batchProfile", action="store_true", default=False,
                            help="Enable profiling on batch job?")
         group.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
@@ -252,6 +261,8 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'dryrun': 'dryrun',
                       'doExec': 'doExec',
                       'mpiexec': 'mpiexec',
+                      'submit': 'batchSubmit',
+                      'options': 'batchOptions',
                       } # Mapping Batch init kwargs --> argument parser elements
         kwargs = dict((k, getattr(args, v)) for k,v in argMapping.iteritems())
         return BATCH_TYPES[args.batchType](**kwargs)
