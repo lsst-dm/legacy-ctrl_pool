@@ -146,14 +146,15 @@ class PbsBatch(Batch):
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
-        return "\n".join(["#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
+        return "\n".join([
+                          "#PBS %s" % self.options if self.options is not None else "",
+                          "#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
                           "#PBS -l walltime=%d" % walltime if walltime is not None else "",
                           "#PBS -o %s" % self.outputDir if self.outputDir is not None else "",
                           "#PBS -N %s" % self.jobName if self.jobName is not None else "",
                           "#PBS -q %s" % self.queue if self.queue is not None else "",
                           "#PBS -j oe",
                           "#PBS -W umask=%s" % UMASK,
-                          "#PBS %s" % self.options if self.options is not None else "",
                           ])
 
     def submitCommand(self, scriptName):
