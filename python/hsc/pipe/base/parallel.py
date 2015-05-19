@@ -41,6 +41,24 @@ def shCommandFromArgs(args):
     """Convert a list of shell arguments to a shell command-line"""
     return ' '.join([shQuote(a) for a in args])
 
+def processStats():
+    """Collect Linux-specific process statistics
+
+    Parses the /proc/self/status file (N.B. Linux-specific!) into a dict
+    which is returned.
+    """
+    result = {}
+    with open("/proc/self/status") as f:
+        for line in f:
+            key, _, value = line.partition(":")
+            result[key] = value.strip()
+    return result
+
+def printProcessStats():
+    """Print the process statistics to the log"""
+    from lsst.pex.logging import getDefaultLog
+    getDefaultLog().info("Process stats for %s: %s" % (NODE, processStats()))
+
 class Batch(object):
     """Base class for batch submission"""
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, walltime=None,
@@ -231,6 +249,8 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--batch-options", dest="batchOptions", help="Header options for batch script")
         group.add_argument("--batch-profile", dest="batchProfile", action="store_true", default=False,
                            help="Enable profiling on batch job?")
+        group.add_argument("--batch-stats", dest="batchStats", action="store_true", default=False,
+                           help="Print process stats on completion (Linux only)?")
         group.add_argument("--dry-run", dest="dryrun", default=False, action="store_true",
                            help="Dry run?")
         group.add_argument("--do-exec", dest="doExec", default=False, action="store_true",
@@ -361,8 +381,13 @@ class BatchCmdLineTask(CmdLineTask):
         job = args.job if args.job is not None else "job"
         module = cls.__module__
         script = ("import os; os.umask(%s); " +
-                  "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); " +
-                  "import %s; %s.%s.parseAndRun();") % (UMASK, job, module, module, cls.__name__)
+                  "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); ") % (UMASK, job)
+
+        if args.batchStats:
+            script += ("import hsc.pipe.base.parallel; import atexit; " +
+                       "atexit.register(hsc.pipe.base.parallel.printProcessStats); ")
+
+        script += "import %s; %s.%s.parseAndRun();" % (module, module, cls.__name__)
 
         profilePre = "import cProfile; import os; cProfile.run(\"\"\""
         profilePost = "\"\"\", filename=\"profile-" + job + "-%s-%d.dat\" % (os.uname()[1], os.getpid()))"
