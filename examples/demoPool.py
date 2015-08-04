@@ -24,7 +24,7 @@ def test2(cache, data, *args, **kwargs):
                                                        args, cache.kwargs, kwargs, hasattr(cache, "p"))
     return None
 
-from hsc.pipe.base.pool import startPool, Pool, Debugger, Comm
+from lsst.ctrl.pool.pool import startPool, Pool, Debugger, Comm
 
 # Here's how to enable debugging messages from the pool
 Debugger().enabled = True

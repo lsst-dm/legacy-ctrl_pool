@@ -1,4 +1,4 @@
 *.pyc
 .scon*
-ups/hscPipeBase.cfgc
-python/hsc/pipe/base/version.py
+ups/ctrl_pool.cfgc
+python/lsst/ctrl/pool/version.py

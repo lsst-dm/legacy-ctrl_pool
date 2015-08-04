@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import hsc.pipe.base.log # Monkey-patch lsst.pex.logging
-
 import re
 import os
 import os.path
@@ -14,7 +12,8 @@ import contextlib
 import lsst.pex.logging as pexLog
 import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
-from hsc.pipe.base.pool import startPool, NODE, abortOnError
+from .pool import startPool, NODE, abortOnError
+from . import log  # register pickle functions for pex_logging
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
            "BatchCmdLineTask", "BatchPoolTask",]
@@ -381,11 +380,11 @@ class BatchCmdLineTask(CmdLineTask):
         job = args.job if args.job is not None else "job"
         module = cls.__module__
         script = ("import os; os.umask(%s); " +
-                  "import hsc.pipe.base.log; hsc.pipe.base.log.jobLog(\"%s\"); ") % (UMASK, job)
+                  "import lsst.ctrl.pool.log; lsst.ctrl.pool.log.jobLog(\"%s\"); ") % (UMASK, job)
 
         if args.batchStats:
-            script += ("import hsc.pipe.base.parallel; import atexit; " +
-                       "atexit.register(hsc.pipe.base.parallel.printProcessStats); ")
+            script += ("import lsst.ctrl.pool.parallel; import atexit; " +
+                       "atexit.register(lsst.ctrl.pool.parallel.printProcessStats); ")
 
         script += "import %s; %s.%s.parseAndRun();" % (module, module, cls.__name__)
 
