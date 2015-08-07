@@ -1,4 +1,4 @@
 setupRequired(daf_persistence)
-setupRequired(obs_subaru)
+setupRequired(pipe_base)
 setupOptional(mpi4py)
 pathPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)
