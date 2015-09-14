@@ -923,7 +923,7 @@ def startPool(comm=Comm(), root=0, killSlaves=True):
     slave.run()
     if killSlaves:
         del slave # Required to prevent segmentation fault on exit
-        exit()
+        sys.exit()
     return slave
 
 
