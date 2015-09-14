@@ -9,8 +9,6 @@ import tempfile
 import argparse
 import traceback
 import contextlib
-import lsst.pex.logging as pexLog
-import lsst.afw.cameraGeom as cameraGeom
 from lsst.pipe.base import CmdLineTask
 from .pool import startPool, NODE, abortOnError
 from . import log  # register pickle functions for pex_logging
