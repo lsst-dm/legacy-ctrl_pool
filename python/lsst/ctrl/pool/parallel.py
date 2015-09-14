@@ -34,6 +34,7 @@ def shQuote(arg):
         return _quote_pos.sub('\\\\', arg).replace('\n',"'\n'")
     else:
         return "''"
+
 def shCommandFromArgs(args):
     """Convert a list of shell arguments to a shell command-line"""
     return ' '.join([shQuote(a) for a in args])
@@ -58,6 +59,7 @@ def printProcessStats():
 
 class Batch(object):
     """Base class for batch submission"""
+
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, walltime=None,
                  dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
         """Constructor
@@ -177,6 +179,7 @@ class PbsBatch(Batch):
 
 class SlurmBatch(Batch):
     """Batch submission with Slurm"""
+
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
@@ -195,11 +198,13 @@ class SlurmBatch(Batch):
     def submitCommand(self, scriptName):
         return "sbatch %s %s" % (self.options if self.options is not None else "", scriptName)
 
+
 class SmpBatch(Batch):
     """Not-really-Batch submission with multiple cores on the current node
 
     The job is run immediately.
     """
+
     def __init__(self, *args, **kwargs):
         super(SmpBatch, self).__init__(*args, **kwargs)
         self.mpiexec = "%s -n %d" % (self.mpiexec if self.mpiexec is not None else "", self.numProcsPerNode)
@@ -219,6 +224,7 @@ BATCH_TYPES = {'pbs': PbsBatch,
                'smp': SmpBatch,
                } # Mapping batch type --> Batch class
 
+
 class BatchArgumentParser(argparse.ArgumentParser):
     """An argument parser to get relevant parameters for batch submission
 
@@ -229,6 +235,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
     BatchArgumentParser doesn't parse, so they can be passed on to a different
     program (though we also want to parse them to check that they can be parsed).
     """
+
     def __init__(self, parent=None, *args, **kwargs):
         super(BatchArgumentParser, self).__init__(*args, **kwargs)
         self._parent = parent
@@ -339,6 +346,7 @@ def exportEnv():
 
 
 class BatchCmdLineTask(CmdLineTask):
+
     @classmethod
     def parseAndSubmit(cls, args=None, **kwargs):
         taskParser = cls._makeArgumentParser(doBatch=True, add_help=False)
@@ -416,6 +424,7 @@ class BatchCmdLineTask(CmdLineTask):
             raise
         finally:
             self.log.info("%s: Finished %s" % (NODE, operation))
+
 
 class BatchPoolTask(BatchCmdLineTask):
     @classmethod

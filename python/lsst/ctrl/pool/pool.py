@@ -38,6 +38,7 @@ def unpickleInstanceMethod(obj, name):
     pickle needs to find it.
     """
     return getattr(obj, name)
+
 def pickleInstanceMethod(method):
     """Pickle an instance method
 
@@ -47,7 +48,9 @@ def pickleInstanceMethod(method):
     obj = method.__self__
     name = method.__name__
     return unpickleInstanceMethod, (obj, name)
+
 copy_reg.pickle(types.MethodType, pickleInstanceMethod)
+
 
 def unpickleFunction(moduleName, funcName):
     """Unpickle a function
@@ -58,6 +61,7 @@ def unpickleFunction(moduleName, funcName):
     import importlib
     module = importlib.import_module(moduleName)
     return getattr(module, funcName)
+
 def pickleFunction(function):
     """Pickle a function
 
@@ -73,7 +77,9 @@ def pickleFunction(function):
     moduleName = function.__module__
     funcName = function.__name__
     return unpickleFunction, (moduleName, funcName)
+
 copy_reg.pickle(types.FunctionType, pickleFunction)
+
 
 def abortOnError(func):
     """Function decorator to throw an MPI abort on an unhandled exception"""
@@ -89,6 +95,7 @@ def abortOnError(func):
             mpi.COMM_WORLD.Abort(1)
     return wrapper
 
+
 class PickleHolder(object):
     """Singleton to hold what's about to be pickled.
 
@@ -101,18 +108,23 @@ class PickleHolder(object):
     Here we use the __new__-style singleton pattern, because
     we specifically want __init__ to be called each time.
     """
+
     _instance = None
+
     def __new__(cls, hold=None):
         if cls._instance is None:
             cls._instance = super(PickleHolder, cls).__new__(cls, hold)
             cls._instance.obj = None
         return cls._instance
+
     def __init__(self, hold=None):
         """Hold onto new object"""
         if hold is not None:
             self.obj = hold
+
     def __enter__(self):
         pass
+
     def __exit__(self, excType, excVal, tb):
         """Drop held object if there were no problems"""
         if excType is None:
@@ -203,6 +215,7 @@ class Comm(mpi.Intracomm):
     * http://code.google.com/p/mpi4py/issues/detail?id=4 and
     * https://groups.google.com/forum/?fromgroups=#!topic/mpi4py/nArVuMXyyZI
     """
+
     def __new__(cls, comm=mpi.COMM_WORLD, recvSleep=0.1, barrierSleep=0.1):
         """Construct an MPI.Comm wrapper
 
@@ -267,6 +280,7 @@ class NoOp(object):
     """Object to signal no operation"""
     pass
 
+
 class Tags(object):
     """Provides tag numbers by symbolic name in attributes"""
     def __init__(self, *nameList):
@@ -277,6 +291,7 @@ class Tags(object):
         return self.__class__.__name__ + repr(self._nameList)
     def __reduce__(self):
         return self.__class__, tuple(self._nameList)
+
 
 class Cache(Struct):
     """An object to hold stuff between different scatter calls
@@ -303,6 +318,7 @@ class SingletonMeta(type):
     * "__call__" is making an instance of the class (it's like
       "__new__" in the class).
     """
+
     def __init__(self, name, bases, dict_):
         super(SingletonMeta, self).__init__(name, bases, dict_)
         self._instance = None
@@ -319,7 +335,9 @@ class Debugger(object):
     Disabled by default; to enable, do: 'Debugger().enabled = True'
     You can also redirect the output by changing the 'out' attribute.
     """
+
     __metaclass__ = SingletonMeta
+
     def __init__(self):
         self.enabled = False
         self.out = sys.stderr
@@ -347,7 +365,9 @@ class PoolNode(object):
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
+
     __metaclass__ = SingletonMeta
+
     def __init__(self, comm=Comm(), root=0):
         self.comm = comm
         self.rank = self.comm.rank
@@ -439,6 +459,7 @@ class PoolNode(object):
             raise KeyError("No such context: %s" % context)
         sys.stderr.write("Store on %s (%s): %s\n" % (self.node, context, self._store[context]))
 
+
 class PoolMaster(PoolNode):
     """Master node instance of MPI process pool
 
@@ -448,6 +469,7 @@ class PoolMaster(PoolNode):
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
+
     def __init__(self, *args, **kwargs):
         super(PoolMaster, self).__init__(*args, **kwargs)
         assert self.root == self.rank, "This is the master node"
@@ -747,6 +769,7 @@ class PoolMaster(PoolNode):
 
 class PoolSlave(PoolNode):
     """Slave node instance of MPI process pool"""
+
     def log(self, msg, *args):
         """Log a debugging message"""
         self.debugger.log("Slave %d" % self.rank, msg, *args)
@@ -869,13 +892,15 @@ class PoolWrapperMeta(type):
 
     The 'context' is automatically supplied to these methods as the first argument.
     """
+
     def __call__(self, context="default"):
         instance = super(PoolWrapperMeta, self).__call__(context)
         pool = PoolMaster()
-        for name in ("map", "mapNoBalance", "mapToPrevious", "storeSet", "storeDel", "storeClear", "storeList",
-                     "cacheList", "cacheClear",):
+        for name in ("map", "mapNoBalance", "mapToPrevious", "storeSet", "storeDel",
+                     "storeClear", "storeList", "cacheList", "cacheClear",):
             setattr(instance, name, partial(getattr(pool, name), context))
         return instance
+
 
 class PoolWrapper(object):
     """Wrap PoolMaster to automatically provide context"""
@@ -886,8 +911,8 @@ class PoolWrapper(object):
     def __getattr__(self, name):
         return getattr(self._pool, name)
 
-class Pool(PoolWrapper):
-    # Just gives PoolWrapper a nicer name for the user
+
+class Pool(PoolWrapper):     # Just gives PoolWrapper a nicer name for the user
     """Process Pool
 
     Use this class to automatically provide 'context' to
@@ -896,6 +921,7 @@ class Pool(PoolWrapper):
     class directly, and specify context=None.
     """
     pass
+
 
 def startPool(comm=Comm(), root=0, killSlaves=True):
     """
@@ -938,6 +964,7 @@ class PoolDecorator(object):
     That's a long way of saying, if this doesn't work for you, don't
     use it.
     """
+
     def __init__(self, poolFunc, stripSelf, *args):
         """Constructor
 
@@ -946,6 +973,7 @@ class PoolDecorator(object):
         """
         self.poolFunc = poolFunc
         self.poolArgs = args
+
     def __call__(self, func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -961,16 +989,19 @@ class PoolDecorator(object):
 def poolMap(func):
     """Function decorator to use Pool.map"""
     return PoolDecorator("map", False)(func)
+
 def poolMapWithCache(func):
     """Function decorator to use Pool.map with cache provided"""
     return PoolDecorator("map", True)(func)
+
 def poolMapToPrevious(func):
     """Function decorator to use Pool.mapToPrevious"""
     return PoolDecorator("mapToPrevious")(func)
+
 def poolMapNoBalance(func):
     """Function decorator to use Pool.mapNoBalance"""
     return PoolDecorator("mapNoBalance", False)(func)
+
 def poolMapNoBalanceWithCache(func):
     """Function decorator to use Pool.mapNoBalance with cache provided"""
     return PoolDecorator("mapNoBalance", True)(func)
-
