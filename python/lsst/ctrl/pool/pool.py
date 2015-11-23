@@ -487,7 +487,7 @@ class PoolMaster(PoolNode):
         A command is the name of the PoolSlave method they should run.
         """
         self.log("command", cmd)
-        self.comm.broadcast(cmd, root=self.rank)
+        self.comm.broadcast(cmd, root=self.root)
 
     @abortOnError
     @catchPicklingError
@@ -526,7 +526,7 @@ class PoolMaster(PoolNode):
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs, context), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
         # Parcel out first set of data
         queue = zip(range(num), dataList) # index, data
@@ -588,7 +588,7 @@ class PoolMaster(PoolNode):
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs, context), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
         # Divide up the jobs
         # Try to give root the least to do, so it also has time to manage
@@ -677,13 +677,13 @@ class PoolMaster(PoolNode):
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs, context), root=self.rank)
+        self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
-        requestList = self.comm.gather(root=self.rank)
+        requestList = self.comm.gather(root=self.root)
         self.log("listen", requestList)
         initial = [dataList[index] if index >= 0 else None for index in requestList]
         self.log("scatter jobs", initial)
-        self.comm.scatter(initial, root=self.rank)
+        self.comm.scatter(initial, root=self.root)
         pending = min(num, self.size - 1)
 
         resultList = [None]*num
@@ -721,7 +721,7 @@ class PoolMaster(PoolNode):
         super(PoolMaster, self).storeSet(context, **kwargs)
         self.command("storeSet")
         self.log("give data")
-        self.comm.broadcast((context, kwargs), root=self.rank)
+        self.comm.broadcast((context, kwargs), root=self.root)
         self.log("done")
 
     @abortOnError
@@ -730,7 +730,7 @@ class PoolMaster(PoolNode):
         super(PoolMaster, self).storeDel(context, *nameList)
         self.command("storeDel")
         self.log("tell names")
-        self.comm.broadcast((context, nameList), root=self.rank)
+        self.comm.broadcast((context, nameList), root=self.root)
         self.log("done")
 
     @abortOnError
@@ -738,28 +738,28 @@ class PoolMaster(PoolNode):
         """Reset data store for a particular context on master and slaves"""
         super(PoolMaster, self).storeClear(context)
         self.command("storeClear")
-        self.comm.broadcast(context, root=self.rank)
+        self.comm.broadcast(context, root=self.root)
 
     @abortOnError
     def cacheClear(self, context):
         """Reset cache for a particular context on master and slaves"""
         super(PoolMaster, self).cacheClear(context)
         self.command("cacheClear")
-        self.comm.broadcast(context, root=self.rank)
+        self.comm.broadcast(context, root=self.root)
 
     @abortOnError
     def cacheList(self, context):
         """List cache contents for a particular context on master and slaves"""
         super(PoolMaster, self).cacheList(context)
         self.command("cacheList")
-        self.comm.broadcast(context, root=self.rank)
+        self.comm.broadcast(context, root=self.root)
 
     @abortOnError
     def storeList(self, context):
         """List store contents for a particular context on master and slaves"""
         super(PoolMaster, self).storeList(context)
         self.command("storeList")
-        self.comm.broadcast(context, root=self.rank)
+        self.comm.broadcast(context, root=self.root)
 
     def exit(self):
         """Command slaves to exit"""
@@ -771,6 +771,7 @@ class PoolSlave(PoolNode):
 
     def log(self, msg, *args):
         """Log a debugging message"""
+        assert self.rank != self.root, "This is not the master node."
         self.debugger.log("Slave %d" % self.rank, msg, *args)
 
     @abortOnError
