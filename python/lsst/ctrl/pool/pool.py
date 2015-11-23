@@ -88,8 +88,7 @@ def abortOnError(func):
         try:
             return func(*args, **kwargs)
         except Exception, e:
-            sys.stderr.write("%s on %s:%s in %s: %s\n" % (type(e).__name__, os.uname()[1], os.getpid(),
-                                                          func.__name__, e))
+            sys.stderr.write("%s on %s in %s: %s\n" % (type(e).__name__, NODE, func.__name__, e))
             import traceback
             traceback.print_exc(file=sys.stderr)
             mpi.COMM_WORLD.Abort(1)
@@ -376,7 +375,7 @@ class PoolNode(object):
         self._cache = {}
         self._store = {}
         self.debugger = Debugger()
-        self.node = "%s:%d" % (os.uname()[1], os.getpid())
+        self.node = NODE
 
     def _getCache(self, context, index):
         """Retrieve cache for particular data
