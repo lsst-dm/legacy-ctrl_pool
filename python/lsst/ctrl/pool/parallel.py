@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
+
 import re
 import os
 import os.path
 import stat
 import sys
+import pipes
 import tempfile
 import argparse
 import traceback
@@ -124,9 +127,12 @@ class Batch(object):
         """
         fd, scriptName = tempfile.mkstemp()
         with os.fdopen(fd, "w") as f:
-            print >>f, self.shebang()
-            print >>f, self.preamble(walltime)
-            print >>f, self.execution(command)
+            f.write(self.shebang())
+            f.write('\n')
+            f.write(self.preamble(walltime))
+            f.write('\n')
+            f.write(self.execution(command))
+            f.write('\n')
 
         os.chmod(scriptName, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return scriptName
@@ -150,7 +156,7 @@ class Batch(object):
         scriptName = self.createScript(command, walltime=walltime)
         command = self.submitCommand(scriptName)
         if self.dryrun:
-            print "Would run: %s" % command
+            print("Would run: %s" % command)
         elif self.doExec:
             os.execl(scriptName, scriptName)
         else:
