@@ -252,7 +252,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--procs", type=int, default=1, help="Number of processors per node")
         group.add_argument("--time", type=float, default=1000,
                            help="Expected execution time per element (sec)")
-        group.add_argument("--batch-type", dest="batchType", choices=BATCH_TYPES.keys(), default="pbs",
+        group.add_argument("--batch-type", dest="batchType", choices=BATCH_TYPES.keys(), default="smp",
                            help="Batch system to use")
         group.add_argument("--batch-output", dest="batchOutput", help="Output directory")
         group.add_argument("--batch-submit", dest="batchSubmit", help="Batch submission command-line flags")
