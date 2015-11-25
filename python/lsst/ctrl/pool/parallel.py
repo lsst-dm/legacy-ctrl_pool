@@ -108,7 +108,7 @@ class Batch(object):
                           "echo 'umask: ' $(umask)",
                           "eups list -s",
                           "export",
-                          "cd %s" % os.getcwd(),
+                          "cd %s" % pipes.quote(os.getcwd()),
                           "date",
                           "mpiexec %s %s" % (self.mpiexec, command),
                           "date",
