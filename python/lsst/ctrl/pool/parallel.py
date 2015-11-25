@@ -282,6 +282,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
 
     def makeBatch(self, args):
         """Create a Batch object from the command-line arguments"""
+        # argMapping is a dict that maps Batch init kwarg names to parsed arguments attribute *names*
         argMapping = {'outputDir': 'batchOutput',
                       'numNodes': 'nodes',
                       'numProcsPerNode': 'procs',
@@ -293,8 +294,9 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'mpiexec': 'mpiexec',
                       'submit': 'batchSubmit',
                       'options': 'batchOptions',
-                      } # Mapping Batch init kwargs --> argument parser elements
-        kwargs = dict((k, getattr(args, v)) for k,v in argMapping.iteritems())
+                      }
+        # kwargs is a dict that maps Batch init kwarg names to parsed arguments attribute *values*
+        kwargs = {k: getattr(args, v)) for k, v in argMapping.iteritems()}
         return BATCH_TYPES[args.batchType](**kwargs)
 
     def format_help(self):
