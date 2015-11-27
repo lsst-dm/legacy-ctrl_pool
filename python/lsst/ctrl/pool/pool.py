@@ -367,7 +367,9 @@ class PoolNode(object):
 
     __metaclass__ = SingletonMeta
 
-    def __init__(self, comm=Comm(), root=0):
+    def __init__(self, comm=None, root=0):
+        if comm is None:
+            comm = Comm()
         self.comm = comm
         self.rank = self.comm.rank
         self.root = root
@@ -923,7 +925,7 @@ class Pool(PoolWrapper):     # Just gives PoolWrapper a nicer name for the user
     pass
 
 
-def startPool(comm=Comm(), root=0, killSlaves=True):
+def startPool(comm=None, root=0, killSlaves=True):
     """
     Returns a PoolMaster object for the master node.
     Slave nodes are run and then optionally killed.
@@ -943,6 +945,8 @@ def startPool(comm=Comm(), root=0, killSlaves=True):
     @param root: Rank of root/master node
     @param killSlaves: Kill slaves on completion?
     """
+    if comm is None:
+        comm = Comm()
     if comm.rank == root:
         return PoolMaster(comm, root=root)
     slave = PoolSlave(comm, root=root)
