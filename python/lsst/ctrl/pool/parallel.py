@@ -323,7 +323,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'options': 'batchOptions',
                       }
         # kwargs is a dict that maps Batch init kwarg names to parsed arguments attribute *values*
-        kwargs = {k: getattr(args, v)) for k, v in argMapping.iteritems()}
+        kwargs = {k: getattr(args, v) for k, v in argMapping.iteritems()}
         return BATCH_TYPES[args.batchType](**kwargs)
 
     def format_help(self):
