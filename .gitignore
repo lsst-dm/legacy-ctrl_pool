@@ -2,3 +2,4 @@
 .scon*
 ups/ctrl_pool.cfgc
 python/lsst/ctrl/pool/version.py
+bin/ctrlPoolDemo.py
