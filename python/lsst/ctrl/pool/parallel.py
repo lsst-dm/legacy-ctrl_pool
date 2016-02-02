@@ -392,26 +392,14 @@ class BatchCmdLineTask(CmdLineTask):
         if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent): # Write config, schema
             taskParser.error("Error in task preparation")
 
-        if batchArgs.nodes > 0 and batchArgs.procs > 0:
-            numNodes = batchArgs.nodes
-            numProcs = batchArgs.procs
-        elif batchArgs.cores > 0:
-            # We don't want to modify the API for BatchCmdLineTask.batchWallTime (it should probably only take
-            # the total number of cores, rather than nodes and processors separately), but the following
-            # should produce the same result because the only useful quantity is the product of numNodes and
-            # numProcs.
-            numNodes = 1
-            numProcs = batchArgs.cores
-        else:
-            raise RuntimeError("Must specify either both --nodes and --procs OR --cores")
-
-        walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numNodes, numProcs)
+        numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
+        walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numCores)
 
         command = cls.batchCommand(batchArgs)
         batchArgs.batch.run(command, walltime=walltime)
 
     @classmethod
-    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numCores):
         """Return walltime request for batch job
 
         Subclasses should override if the walltime should be calculated
@@ -419,11 +407,10 @@ class BatchCmdLineTask(CmdLineTask):
 
         @param time: Requested time per iteration
         @param parsedCmd: Results of argument parsing
-        @param numNodes: Number of nodes for processing
-        @param numProcs: Number of processors per node
+        @param numCores: Number of cores
         """
         numTargets = len(cls.RunnerClass.getTargetList(parsedCmd))
-        return time*numTargets/(numNodes*numProcs)
+        return time*numTargets/float(numCores)
 
     @classmethod
     def batchCommand(cls, args):
