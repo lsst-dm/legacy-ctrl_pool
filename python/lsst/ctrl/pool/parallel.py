@@ -213,7 +213,7 @@ class SlurmBatch(Batch):
                           ("#SBATCH --ntasks-per-node=%d" % self.numProcsPerNode) if
                               self.numProcsPerNode > 0 else "",
                           ("#SBATCH --ntasks=%d" % self.numCores) if self.numCores > 0 else "",
-                          "#SBATCH --time=%d" % (walltime/60.0 + 0.5) if walltime is not None else "",
+                          "#SBATCH --time=%d" % max(walltime/60.0 + 0.5, 1) if walltime is not None else "",
                           "#SBATCH --job-name=%s" % self.jobName if self.jobName is not None else "",
                           "#SBATCH -p %s" % self.queue if self.queue is not None else "",
                           "#SBATCH --output=%s" % filename,
