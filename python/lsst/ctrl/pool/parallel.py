@@ -63,13 +63,14 @@ def printProcessStats():
 class Batch(object):
     """Base class for batch submission"""
 
-    def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, walltime=None,
-                 dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
+    def __init__(self, outputDir=None, numNodes=0, numProcsPerNode=0, numCores=0, queue=None, jobName=None,
+                 walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
         """Constructor
 
         @param outputDir: output directory, or None
         @param numNodes: number of nodes
         @param numProcsPerNode: number of processors per node
+        @param numCores: number of cores (Slurm, SMP only)
         @param queue: name of queue, or None
         @param jobName: name of job, or None
         @param walltime: maximum wall clock time for job
@@ -79,9 +80,13 @@ class Batch(object):
         @param submit: command-line options for batch submission (e.g., for qsub, sbatch)
         @param options: options to append to script header (e.g., #PBS or #SBATCH)
         """
+        if (numNodes <= 0 or numProcsPerNode <= 0) and numCores <= 0:
+            raise RuntimeError("Must specify numNodes+numProcs or numCores")
+
         self.outputDir = outputDir
         self.numNodes = numNodes
         self.numProcsPerNode = numProcsPerNode
+        self.numCores = numCores
         self.queue = queue
         self.jobName = jobName
         self.walltime = walltime
@@ -169,6 +174,12 @@ class PbsBatch(Batch):
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
+        if self.numNodes <= 0 or self.numProcsPerNode <= 0:
+            raise RuntimeError(
+                "Number of nodes (--nodes=%d) or number of processors per node (--procs=%d) not set" %
+                (self.numNodes, self.numProcsPerNode))
+        if self.numCores > 0:
+            raise RuntimeError("PBS does not support setting the number of cores")
         return "\n".join([
                           "#PBS %s" % self.options if self.options is not None else "",
                           "#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
@@ -189,11 +200,20 @@ class SlurmBatch(Batch):
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
+        if (self.numNodes <= 0 or self.numProcsPerNode <= 0) and self.numCores <= 0:
+            raise RuntimeError(
+                "Number of nodes (--nodes=%d) and number of processors per node (--procs=%d) not set OR "
+                "number of cores (--cores=%d) not set" % (self.numNodes, self.numProcsPerNode, self.numCores))
+        if self.numCores > 0 and (self.numNodes > 0 or self.numProcsPerNode > 0):
+            raise RuntimeError("Must set either --nodes,--procs or --cores: not both")
+
         outputDir = self.outputDir if self.outputDir is not None else os.getcwd()
         filename = os.path.join(outputDir, (self.jobName if self.jobName is not None else "slurm") + ".o%j")
-        return "\n".join(["#SBATCH --nodes=%d" % self.numNodes,
-                          "#SBATCH --ntasks-per-node=%d" % self.numProcsPerNode,
-                          "#SBATCH --time=%d" % (walltime/60.0 + 0.5) if walltime is not None else "",
+        return "\n".join([("#SBATCH --nodes=%d" % self.numNodes) if self.numNodes > 0 else "",
+                          ("#SBATCH --ntasks-per-node=%d" % self.numProcsPerNode) if
+                              self.numProcsPerNode > 0 else "",
+                          ("#SBATCH --ntasks=%d" % self.numCores) if self.numCores > 0 else "",
+                          "#SBATCH --time=%d" % max(walltime/60.0 + 0.5, 1) if walltime is not None else "",
                           "#SBATCH --job-name=%s" % self.jobName if self.jobName is not None else "",
                           "#SBATCH -p %s" % self.queue if self.queue is not None else "",
                           "#SBATCH --output=%s" % filename,
@@ -213,10 +233,15 @@ class SmpBatch(Batch):
 
     def __init__(self, *args, **kwargs):
         super(SmpBatch, self).__init__(*args, **kwargs)
-        self.mpiexec = "%s -n %d" % (self.mpiexec if self.mpiexec is not None else "", self.numProcsPerNode)
-        if self.numNodes != 1:
-            raise RuntimeError("SMP requires only a single node be specified (--nodes), not %d" %
-                               self.numNodes)
+        if self.numNodes in (0, 1) and self.numProcsPerNode > 0 and self.numCores == 0:
+            # --nodes=1 --procs=NN being used as a synonym for --cores=NN
+            self.numNodes = 0
+            self.numCores = self.numProcsPerNode
+            self.numProcsPerNode = 0
+        if self.numNodes > 0 or self.numProcsPerNode > 0:
+            raise RuntimeError("SMP does not support the --nodes and --procs command-line options; "
+                               "use --cores to specify the number of cores to use")
+        self.mpiexec = "%s -n %d" % (self.mpiexec if self.mpiexec is not None else "", self.numCores)
 
     def preamble(self, walltime=None):
         return ""
@@ -248,8 +273,9 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group = self.add_argument_group("Batch submission options")
         group.add_argument("--queue", help="Queue name")
         group.add_argument("--job", help="Job name")
-        group.add_argument("--nodes", type=int, default=1, help="Number of nodes")
-        group.add_argument("--procs", type=int, default=1, help="Number of processors per node")
+        group.add_argument("--nodes", type=int, default=0, help="Number of nodes")
+        group.add_argument("--procs", type=int, default=0, help="Number of processors per node")
+        group.add_argument("--cores", type=int, default=0, help="Number of cores (Slurm/SMP only)")
         group.add_argument("--time", type=float, default=1000,
                            help="Expected execution time per element (sec)")
         group.add_argument("--batch-type", dest="batchType", choices=BATCH_TYPES.keys(), default="smp",
@@ -286,6 +312,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
         argMapping = {'outputDir': 'batchOutput',
                       'numNodes': 'nodes',
                       'numProcsPerNode': 'procs',
+                      'numCores': 'cores',
                       'walltime': 'time',
                       'queue': 'queue',
                       'jobName': 'job',
@@ -296,7 +323,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'options': 'batchOptions',
                       }
         # kwargs is a dict that maps Batch init kwarg names to parsed arguments attribute *values*
-        kwargs = {k: getattr(args, v)) for k, v in argMapping.iteritems()}
+        kwargs = {k: getattr(args, v) for k, v in argMapping.iteritems()}
         return BATCH_TYPES[args.batchType](**kwargs)
 
     def format_help(self):
@@ -365,13 +392,14 @@ class BatchCmdLineTask(CmdLineTask):
         if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent): # Write config, schema
             taskParser.error("Error in task preparation")
 
-        walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, batchArgs.nodes, batchArgs.procs)
+        numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
+        walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numCores)
 
         command = cls.batchCommand(batchArgs)
         batchArgs.batch.run(command, walltime=walltime)
 
     @classmethod
-    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numCores):
         """Return walltime request for batch job
 
         Subclasses should override if the walltime should be calculated
@@ -379,11 +407,10 @@ class BatchCmdLineTask(CmdLineTask):
 
         @param time: Requested time per iteration
         @param parsedCmd: Results of argument parsing
-        @param numNodes: Number of nodes for processing
-        @param numProcs: Number of processors per node
+        @param numCores: Number of cores
         """
         numTargets = len(cls.RunnerClass.getTargetList(parsedCmd))
-        return time*numTargets/(numNodes*numProcs)
+        return time*numTargets/float(numCores)
 
     @classmethod
     def batchCommand(cls, args):

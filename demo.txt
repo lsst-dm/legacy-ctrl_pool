@@ -1,0 +1,15 @@
+ctrlPoolDemo.py will run a demonstration script that simply reads all
+the CCDs of a single visit using multiple cores, and print the total
+number of pixels that were read.  Below are some example command-lines.
+Note that these are relevant for processing HSC data on the cluster
+at Princeton, and will need small modifications for processing other
+data on other clusters (specifically, the path to the data repo; and
+the "--id" arguments for specifying which data to read).
+
+* Run the demo on a single machine (SMP = Symmetric Multi-Processing):
+
+    ctrlPoolDemo.py /tigress/HSC/HSC --rerun=price/dm-4835 --id visit=1224 --job=demo --batch-type=smp --cores=7
+
+* Run the demo under Slurm:
+
+    ctrlPoolDemo.py /tigress/HSC/HSC --rerun=price/dm-4835 --id visit=1224 --job=demo --batch-type=slurm --cores=112 --time=5
