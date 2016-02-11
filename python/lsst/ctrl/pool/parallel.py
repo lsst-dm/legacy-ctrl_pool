@@ -241,7 +241,10 @@ class SmpBatch(Batch):
         if self.numNodes > 0 or self.numProcsPerNode > 0:
             raise RuntimeError("SMP does not support the --nodes and --procs command-line options; "
                                "use --cores to specify the number of cores to use")
-        self.mpiexec = "%s -n %d" % (self.mpiexec if self.mpiexec is not None else "", self.numCores)
+        if self.numCores > 1:
+            self.mpiexec = "%s -n %d" % (self.mpiexec if self.mpiexec is not None else "", self.numCores)
+        else:
+            self.mpiexec = ""
 
     def preamble(self, walltime=None):
         return ""
