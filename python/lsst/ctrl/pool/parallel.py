@@ -255,9 +255,44 @@ class SmpBatch(Batch):
     def submitCommand(self, scriptName):
         return "exec %s" % scriptName
 
+class SgeBatch(Batch):
+    """Batch submission with SGE"""
+    def preamble(self, walltime=None):
+        if walltime is None:
+            walltime = self.walltime
+        if self.numNodes > 0 or self.numProcsPerNode > 0:
+            raise RuntimeError(
+                "Number of nodes (--nodes=%d) or number of processors per node (--procs=%d) are set, "
+                "but SGE only cares about the number of cores (--cores=%d)" %
+                (self.numNodes, self.numProcsPerNode, self.numCores))
+        if self.numCores <= 0:
+            raise RuntimeError("Number of cores (--cores=%d) is not set" % (self.numCores,))
+        if not "pe" in self.options:
+            raise RuntimeError("No parallel environment specified; use --options pe=<pe_name>")
+
+        outputDir = self.outputDir if self.outputDir is not None else os.getcwd()
+        filename = os.path.join(outputDir, (self.jobName if self.jobName is not None else "sge") + ".o%j")
+
+        return "\n".join([
+            "#$ %s" % self.preambleOptions if self.preambleOptions is not None else "",
+            "#$ -l h_rt=%d" % walltime if walltime is not None else "",
+            "#$ -o %s" % filename,
+            "#$ -e %s" % filename,
+            "#$ -j yes", # combine stdout and stderr logs
+            "#$ -N %s" % self.jobName if self.jobName is not None else "",
+            "#$ -wd %s" % self.outputDir if self.outputDir is not None else "",
+            "#$ -q %s" % self.queue if self.queue is not None else "",
+            "#$ -pe %s %d" % (self.options["pe"], self.numCores),
+        ])
+
+    def submitCommand(self, scriptName):
+        return "qsub %s -V %s" % (self.submit if self.submit is not None else "", scriptName)
+
+
 
 BATCH_TYPES = {'pbs': PbsBatch,
                'slurm': SlurmBatch,
+               'sge': SgeBatch,
                'smp': SmpBatch,
                } # Mapping batch type --> Batch class
 
