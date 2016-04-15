@@ -64,7 +64,8 @@ class Batch(object):
     """Base class for batch submission"""
 
     def __init__(self, outputDir=None, numNodes=0, numProcsPerNode=0, numCores=0, queue=None, jobName=None,
-                 walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
+                 walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, preamble=None,
+                 options=None):
         """Constructor
 
         @param outputDir: output directory, or None
@@ -78,7 +79,8 @@ class Batch(object):
         @param doExec: exec the script instead of submitting to batch system?
         @param mpiexec: options for mpiexec
         @param submit: command-line options for batch submission (e.g., for qsub, sbatch)
-        @param options: options to append to script header (e.g., #PBS or #SBATCH)
+        @param preamble: options to append to script header (e.g., #PBS or #SBATCH)
+        @param options: dict for configuring particular batch systems
         """
         if (numNodes <= 0 or numProcsPerNode <= 0) and numCores <= 0:
             raise RuntimeError("Must specify numNodes+numProcs or numCores")
@@ -94,7 +96,8 @@ class Batch(object):
         self.doExec = doExec
         self.mpiexec = mpiexec
         self.submit = submit
-        self.options = options
+        self.preambleOptions = preamble
+        self.options = options if options is not None else {}
 
     def shebang(self):
         return "#!/bin/bash"
@@ -181,7 +184,7 @@ class PbsBatch(Batch):
         if self.numCores > 0:
             raise RuntimeError("PBS does not support setting the number of cores")
         return "\n".join([
-                          "#PBS %s" % self.options if self.options is not None else "",
+                          "#PBS %s" % self.preambleOptions if self.preambleOptions is not None else "",
                           "#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
                           "#PBS -l walltime=%d" % walltime if walltime is not None else "",
                           "#PBS -o %s" % self.outputDir if self.outputDir is not None else "",
@@ -218,7 +221,7 @@ class SlurmBatch(Batch):
                           "#SBATCH -p %s" % self.queue if self.queue is not None else "",
                           "#SBATCH --output=%s" % filename,
                           "#SBATCH --error=%s" % filename,
-                          "#SBATCH %s" % self.options if self.options is not None else "",
+                          "#SBATCH %s" % self.preambleOptions if self.preambleOptions is not None else "",
                           ])
 
     def submitCommand(self, scriptName):
@@ -259,6 +262,22 @@ BATCH_TYPES = {'pbs': PbsBatch,
                } # Mapping batch type --> Batch class
 
 
+class KeyValueAction(argparse.Action):
+    """argparse callback to parse name=value pairs"""
+    def __call__(self, parser, namespace, values, option):
+        argName = option.lstrip("-")
+        target = getattr(namespace, argName, None)
+        if target is None:
+            target = {}
+            setattr(namespace, argName, target)
+
+        for nameValue in values:
+            name, sep, value = nameValue.partition("=")
+            if not valueStr:
+                parser.error("%s value %s must be in form name=value" % (option, nameValue))
+            target[name] = value
+
+
 class BatchArgumentParser(argparse.ArgumentParser):
     """An argument parser to get relevant parameters for batch submission
 
@@ -285,7 +304,9 @@ class BatchArgumentParser(argparse.ArgumentParser):
                            help="Batch system to use")
         group.add_argument("--batch-output", dest="batchOutput", help="Output directory")
         group.add_argument("--batch-submit", dest="batchSubmit", help="Batch submission command-line flags")
-        group.add_argument("--batch-options", dest="batchOptions", help="Header options for batch script")
+        group.add_argument("--batch-preamble", dest="batchPreamble", help="Preambles for batch script")
+        group.add_argument("--batch-options", dest="batchOptions", nargs="*", action=KeyValueAction,
+                           help="Batch system-specific options", metavar="NAME=VALUE")
         group.add_argument("--batch-profile", dest="batchProfile", action="store_true", default=False,
                            help="Enable profiling on batch job?")
         group.add_argument("--batch-stats", dest="batchStats", action="store_true", default=False,
@@ -323,6 +344,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'doExec': 'doExec',
                       'mpiexec': 'mpiexec',
                       'submit': 'batchSubmit',
+                      'preamble': 'batchPreamble',
                       'options': 'batchOptions',
                       }
         # kwargs is a dict that maps Batch init kwarg names to parsed arguments attribute *values*
