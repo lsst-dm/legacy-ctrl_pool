@@ -12,8 +12,8 @@ import tempfile
 import argparse
 import traceback
 import contextlib
-from lsst.pipe.base import CmdLineTask
-from .pool import startPool, NODE, abortOnError
+from lsst.pipe.base import CmdLineTask, TaskRunner
+from .pool import startPool, Pool, NODE, abortOnError
 from . import log  # register pickle functions for pex_logging
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
@@ -465,6 +465,10 @@ class BatchCmdLineTask(CmdLineTask):
 
 
 class BatchPoolTask(BatchCmdLineTask):
+    """Starts a BatchCmdLineTask with an MPI process pool
+
+    Use this subclass of BatchCmdLineTask if you want to use the Pool directly.
+    """
     @classmethod
     @abortOnError
     def parseAndRun(cls, *args, **kwargs):
@@ -473,3 +477,88 @@ class BatchPoolTask(BatchCmdLineTask):
         super(BatchPoolTask, cls).parseAndRun(*args, **kwargs)
         pool.exit()
 
+
+class BatchTaskRunner(TaskRunner):
+    """Run a Task individually on a list of inputs using the MPI process pool"""
+    def __init__(self, *args, **kwargs):
+        """Constructor
+
+        Warn if the user specified multiprocessing.
+        """
+        TaskRunner.__init__(self, *args, **kwargs)
+        if self.numProcesses > 1:
+            self.log.warn("Multiprocessing arguments (-j %d) ignored since using batch processing" %
+                          self.numProcesses)
+            self.numProcesses = 1
+
+    def run(self, parsedCmd):
+        """Run the task on all targets
+
+        Sole input is the result of parsing the command-line with the ArgumentParser.
+
+        Output is None if 'precall' failed; otherwise it is a list of calling ourself
+        on each element of the target list from the 'getTargetList' method.
+        """
+        resultList = None
+
+        import multiprocessing
+        self.prepareForMultiProcessing()
+        pool = Pool()
+
+        if self.precall(parsedCmd):
+            targetList = self.getTargetList(parsedCmd)
+            if len(targetList) > 0:
+                parsedCmd.log.info("Processing %d targets with a pool of %d processes..." %
+                                   (len(targetList), pool.size))
+                # Run the task using self.__call__
+                resultList = pool.map(self, targetList)
+            else:
+                log.warn("Not running the task because there is no data to process; "
+                    "you may preview data using \"--show data\"")
+                resultList = []
+
+        return resultList
+
+    @abortOnError
+    def __call__(self, cache, args):
+        """Run the Task on a single target
+
+        Strips out the process pool 'cache' argument.
+
+        'args' are those arguments provided by the getTargetList method.
+
+        Brings down the entire job if an exception is not caught (i.e., --doraise).
+        """
+        return TaskRunner.__call__(self, args)
+
+
+class BatchParallelTask(BatchCmdLineTask):
+    """Runs the BatchCmdLineTask in parallel
+
+    Use this subclass of BatchCmdLineTask if you don't need to use the Pool
+    directly, but just want to iterate over many objects (like a multi-node
+    version of the '-j' command-line argument).
+    """
+    RunnerClass = BatchTaskRunner
+
+    @classmethod
+    def _makeArgumentParser(cls, *args, **kwargs):
+        """Build an ArgumentParser
+
+        Removes the batch-specific parts in order to delegate to the parent classes.
+        """
+        kwargs.pop("doBatch", False)
+        kwargs.pop("add_help", False)
+        return super(BatchCmdLineTask, cls)._makeArgumentParser(*args, **kwargs)
+
+    @classmethod
+    def parseAndRun(cls, *args, **kwargs):
+        """Parse an argument list and run the command
+
+        This is the entry point when we run in earnest, so start the process pool
+        so that the worker nodes don't go any further.
+        """
+        pool = startPool()
+        results = super(BatchParallelTask, cls).parseAndRun(*args, **kwargs)
+        pool.exit()
+        return results
