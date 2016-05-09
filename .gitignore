@@ -3,3 +3,7 @@
 ups/ctrl_pool.cfgc
 python/lsst/ctrl/pool/version.py
 bin/ctrlPoolDemo.py
+doc/*.tag
+doc/html
+doc/xml
+doc/doxygen.conf
