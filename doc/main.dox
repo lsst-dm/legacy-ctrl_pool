@@ -1,0 +1,18 @@
+/**
+\mainpage lsst::ctrl::pool: MPI process pool
+
+\section ctrlPool_introduction Introduction
+
+MPI process pool.
+
+This package contains an implementation of a process pool using MPI
+(\ref lsst.ctrl.pool.pool.Pool "lsst.ctrl.pool.pool.Pool"). It also
+contains customisations of \ref lsst.pipe.base.cmdLineTask.CmdLineTask "lsst.pipe.base.CmdLineTask" that make
+it simple to either run the Task in parallel over multiple nodes
+(\ref lsst.ctrl.pool.parallel.BatchParallelTask "lsst.ctrl.pool.parallel.BatchParallelTask") or to use the
+scatter/gather capabilities of the process pool directly in a Task 
+(\ref lsst.ctrl.pool.parallel.BatchPoolTask "lsst.ctrl.pool.parallel.BatchPoolTask").
+
+ */
+
+}}}
