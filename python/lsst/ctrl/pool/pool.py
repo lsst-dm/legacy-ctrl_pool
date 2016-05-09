@@ -216,8 +216,9 @@ class Comm(mpi.Intracomm):
     """
 
     def __new__(cls, comm=mpi.COMM_WORLD, recvSleep=0.1, barrierSleep=0.1):
-        """Construct an MPI.Comm wrapper
+        """!Construct an MPI.Comm wrapper
 
+        @param cls             Class
         @param comm            MPI.Intracomm to wrap a duplicate of
         @param recvSleep       Sleep time (seconds) for recv()
         @param barrierSleep    Sleep time (seconds) for Barrier()
@@ -303,7 +304,7 @@ class Cache(Struct):
 
 
 class SingletonMeta(type):
-    """Metaclass to produce a singleton
+    """!Metaclass to produce a singleton
 
     Doing a singleton mixin without a metaclass (via __new__) is
     annoying because the user has to name his __init__ something else
@@ -342,7 +343,7 @@ class Debugger(object):
         self.out = sys.stderr
 
     def log(self, source, msg, *args):
-        """Log message
+        """!Log message
 
         The 'args' are only stringified if we're enabled.
 
@@ -403,7 +404,7 @@ class PoolNode(object):
         return self.rank == self.root
 
     def _processQueue(self, context, func, queue, *args, **kwargs):
-        """Process a queue of data
+        """!Process a queue of data
 
         The queue consists of a list of (index, data) tuples,
         where the index maps to the cache, and the data is
@@ -413,6 +414,7 @@ class PoolNode(object):
         @param func: function for slaves to run
         @param queue: List of (index,data) tuples to process
         @param args: Constant arguments
+        @param kwargs: Keyword arguments
         @return list of results from applying 'func' to dataList
         """
         if context is not None:
@@ -494,7 +496,7 @@ class PoolMaster(PoolNode):
     @abortOnError
     @catchPicklingError
     def map(self, context, func, dataList, *args, **kwargs):
-        """Scatter work to slaves and gather the results
+        """!Scatter work to slaves and gather the results
 
         Work is distributed dynamically, so that slaves that finish
         quickly will receive more work.
@@ -560,7 +562,7 @@ class PoolMaster(PoolNode):
     @abortOnError
     @catchPicklingError
     def mapNoBalance(self, context, func, dataList, *args, **kwargs):
-        """Scatter work to slaves and gather the results
+        """!Scatter work to slaves and gather the results
 
         Work is distributed statically, so there is no load balancing.
 
@@ -646,7 +648,7 @@ class PoolMaster(PoolNode):
     @abortOnError
     @catchPicklingError
     def mapToPrevious(self, context, func, dataList, *args, **kwargs):
-        """Scatter work to the same target as before
+        """!Scatter work to the same target as before
 
         Work is distributed so that each slave handles the same
         indices in the dataList as when 'map' was called.
@@ -711,13 +713,14 @@ class PoolMaster(PoolNode):
     @abortOnError
     @catchPicklingError
     def storeSet(self, context, **kwargs):
-        """Store data on slave for a particular context
+        """!Store data on slave for a particular context
 
         The data is made available to functions through the cache. The
         stored data differs from the cache in that it is identical for
         all operations, whereas the cache is specific to the data being
         operated upon.
 
+        @param context: namespace for store
         @param kwargs: dict of name=value pairs
         """
         super(PoolMaster, self).storeSet(context, **kwargs)
@@ -926,7 +929,8 @@ class Pool(PoolWrapper):     # Just gives PoolWrapper a nicer name for the user
 
 
 def startPool(comm=None, root=0, killSlaves=True):
-    """
+    """!Start a process pool.
+
     Returns a PoolMaster object for the master node.
     Slave nodes are run and then optionally killed.
 

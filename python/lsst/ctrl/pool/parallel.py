@@ -65,7 +65,7 @@ class Batch(object):
 
     def __init__(self, outputDir=None, numNodes=0, numProcsPerNode=0, numCores=0, queue=None, jobName=None,
                  walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
-        """Constructor
+        """!Constructor
 
         @param outputDir: output directory, or None
         @param numNodes: number of nodes
@@ -124,7 +124,7 @@ class Batch(object):
                           ])
 
     def createScript(self, command, walltime=None):
-        """Create script to be submitted
+        """!Create script to be submitted
 
         @param command: command to run
         @param walltime: maximum wall clock time, overrides value to constructor
@@ -143,14 +143,14 @@ class Batch(object):
         return scriptName
 
     def submitCommand(self, scriptName):
-        """Return command to submit script
+        """!Return command to submit script
 
         @param scriptName: name of script on filesystem
         """
         raise NotImplementedError("No implementation for base class")
 
     def run(self, command, walltime=None):
-        """Run the batch system
+        """!Run the batch system
 
         Creates and submits the script to execute the provided command
 
@@ -403,11 +403,12 @@ class BatchCmdLineTask(CmdLineTask):
 
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numCores):
-        """Return walltime request for batch job
+        """!Return walltime request for batch job
 
         Subclasses should override if the walltime should be calculated
         differently (e.g., addition of some serial time).
 
+        @param cls: Class
         @param time: Requested time per iteration
         @param parsedCmd: Results of argument parsing
         @param numCores: Number of cores
@@ -417,8 +418,9 @@ class BatchCmdLineTask(CmdLineTask):
 
     @classmethod
     def batchCommand(cls, args):
-        """Return command to run CmdLineTask
+        """!Return command to run CmdLineTask
 
+        @param cls: Class
         @param args: Parsed batch job arguments (from BatchArgumentParser)
         """
         job = args.job if args.job is not None else "job"
@@ -440,7 +442,7 @@ class BatchCmdLineTask(CmdLineTask):
 
     @contextlib.contextmanager
     def logOperation(self, operation, catch=False, trace=True):
-        """Provide a context manager for logging an operation
+        """!Provide a context manager for logging an operation
 
         @param operation: description of operation (string)
         @param catch: Catch all exceptions?
