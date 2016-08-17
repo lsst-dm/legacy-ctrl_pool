@@ -8,6 +8,8 @@
 #
 
 from __future__ import print_function
+from builtins import map
+from builtins import range
 NUM = 10  # Number of items in data list
 
 import math
@@ -35,7 +37,7 @@ Debugger().enabled = True
 
 startPool()
 
-dataList = map(float, range(NUM))
+dataList = list(map(float, range(NUM)))
 
 
 def context1(pool1):

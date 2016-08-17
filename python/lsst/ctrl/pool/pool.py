@@ -1,3 +1,9 @@
+from future import standard_library
+standard_library.install_aliases()
+from builtins import zip
+from builtins import range
+from past.builtins import basestring
+from builtins import object
 # MPI process pool
 # Copyright 2013 Paul A. Price
 #
@@ -19,13 +25,14 @@ import os
 import sys
 import time
 import types
-import copy_reg
+import copyreg
 from functools import wraps, partial
 from contextlib import contextmanager
 
 import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
+from future.utils import with_metaclass
 
 __all__ = ["Comm", "Pool", "startPool", "abortOnError", "NODE", ]
 
@@ -51,7 +58,7 @@ def pickleInstanceMethod(method):
     name = method.__name__
     return unpickleInstanceMethod, (obj, name)
 
-copy_reg.pickle(types.MethodType, pickleInstanceMethod)
+copyreg.pickle(types.MethodType, pickleInstanceMethod)
 
 
 def unpickleFunction(moduleName, funcName):
@@ -81,7 +88,7 @@ def pickleFunction(function):
     funcName = function.__name__
     return unpickleFunction, (moduleName, funcName)
 
-copy_reg.pickle(types.FunctionType, pickleFunction)
+copyreg.pickle(types.FunctionType, pickleFunction)
 
 
 def abortOnError(func):
@@ -338,14 +345,12 @@ class SingletonMeta(type):
         return self._instance
 
 
-class Debugger(object):
+class Debugger(with_metaclass(SingletonMeta, object)):
     """Debug logger singleton
 
     Disabled by default; to enable, do: 'Debugger().enabled = True'
     You can also redirect the output by changing the 'out' attribute.
     """
-
-    __metaclass__ = SingletonMeta
 
     def __init__(self):
         self.enabled = False
@@ -367,15 +372,13 @@ class Debugger(object):
             self.out.write("\n")
 
 
-class PoolNode(object):
+class PoolNode(with_metaclass(SingletonMeta, object)):
     """Node in MPI process pool
 
     WARNING: You should not let a pool instance hang around at program
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
-
-    __metaclass__ = SingletonMeta
 
     def __init__(self, comm=None, root=0):
         if comm is None:
@@ -435,7 +438,7 @@ class PoolNode(object):
         self.log("storing", context, kwargs)
         if not context in self._store:
             self._store[context] = {}
-        for name, value in kwargs.iteritems():
+        for name, value in kwargs.items():
             self._store[context][name] = value
 
     def storeDel(self, context, *nameList):
@@ -530,7 +533,7 @@ class PoolMaster(PoolNode):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, list(zip(list(range(num)), dataList)), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
             return self.mapNoBalance(context, func, dataList, *args, **kwargs)
@@ -542,7 +545,7 @@ class PoolMaster(PoolNode):
         self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
         # Parcel out first set of data
-        queue = zip(range(num), dataList)  # index, data
+        queue = list(zip(range(num), dataList))  # index, data
         resultList = [None]*num
         initial = [None if i == self.rank else queue.pop(0) if queue else NoOp() for
                    i in range(self.size)]
@@ -595,7 +598,7 @@ class PoolMaster(PoolNode):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, list(zip(range(num), dataList)), *args, **kwargs)
 
         self.command("mapNoBalance")
 
@@ -605,7 +608,7 @@ class PoolMaster(PoolNode):
 
         # Divide up the jobs
         # Try to give root the least to do, so it also has time to manage
-        queue = zip(range(num), dataList)  # index, data
+        queue = list(zip(range(num), dataList))  # index, data
         if num < self.size:
             distribution = [[queue[i]] for i in range(num)]
             distribution.insert(self.rank, [])
@@ -681,7 +684,7 @@ class PoolMaster(PoolNode):
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, list(zip(range(num), dataList)), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
             return self.mapNoBalance(context, func, dataList, *args, **kwargs)
@@ -847,7 +850,7 @@ class PoolSlave(PoolNode):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
         tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
-        queue = self._cache[context].keys() if context in self._cache else None
+        queue = list(self._cache[context].keys()) if context in self._cache else None
         index = queue.pop(0) if queue else -1
         self.log("request job", index)
         self.comm.gather(index, root=self.root)
@@ -916,9 +919,8 @@ class PoolWrapperMeta(type):
         return instance
 
 
-class PoolWrapper(object):
+class PoolWrapper(with_metaclass(PoolWrapperMeta, object)):
     """Wrap PoolMaster to automatically provide context"""
-    __metaclass__ = PoolWrapperMeta
 
     def __init__(self, context="default"):
         self._pool = PoolMaster._instance

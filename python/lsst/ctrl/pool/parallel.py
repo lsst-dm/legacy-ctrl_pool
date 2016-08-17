@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+from builtins import object
 
 import re
 import os
@@ -289,7 +290,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--cores", type=int, default=0, help="Number of cores (Slurm/SMP only)")
         group.add_argument("--time", type=float, default=1000,
                            help="Expected execution time per element (sec)")
-        group.add_argument("--batch-type", dest="batchType", choices=BATCH_TYPES.keys(), default="smp",
+        group.add_argument("--batch-type", dest="batchType", choices=list(BATCH_TYPES.keys()), default="smp",
                            help="Batch system to use")
         group.add_argument("--batch-output", dest="batchOutput", help="Output directory")
         group.add_argument("--batch-submit", dest="batchSubmit", help="Batch submission command-line flags")
@@ -334,7 +335,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'options': 'batchOptions',
                       }
         # kwargs is a dict that maps Batch init kwarg names to parsed arguments attribute *values*
-        kwargs = {k: getattr(args, v) for k, v in argMapping.iteritems()}
+        kwargs = {k: getattr(args, v) for k, v in argMapping.items()}
         return BATCH_TYPES[args.batchType](**kwargs)
 
     def format_help(self):

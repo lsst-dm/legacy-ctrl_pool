@@ -1,5 +1,7 @@
+from future import standard_library
+standard_library.install_aliases()
 import os
-import copy_reg
+import copyreg
 
 import lsst.pex.logging as pexLog
 
@@ -13,8 +15,8 @@ def pickleLog(log):
     """
     return pexLog.getDefaultLog, tuple()
 
-copy_reg.pickle(pexLog.Log, pickleLog)
-copy_reg.pickle(pexLog.ScreenLog, pickleLog)
+copyreg.pickle(pexLog.Log, pickleLog)
+copyreg.pickle(pexLog.ScreenLog, pickleLog)
 
 
 def jobLog(job):

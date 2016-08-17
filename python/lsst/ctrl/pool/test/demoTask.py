@@ -50,7 +50,7 @@ class DemoTask(BatchPoolTask):
         dataIdList = collections.OrderedDict(sorted(dataIdList.items()))
 
         with self.logOperation("master"):
-            pixels = pool.map(self.read, dataIdList.values(), butler=visitRef.getButler())
+            pixels = pool.map(self.read, list(dataIdList.values()), butler=visitRef.getButler())
         total = sum(pp for pp in pixels if pp is not None)
         self.log.info("Total number of pixels read: %d" % (total,))
 
