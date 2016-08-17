@@ -90,7 +90,7 @@ def abortOnError(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception, e:
+        except Exception as e:
             sys.stderr.write("%s on %s in %s: %s\n" % (type(e).__name__, NODE, func.__name__, e))
             import traceback
             traceback.print_exc(file=sys.stderr)
