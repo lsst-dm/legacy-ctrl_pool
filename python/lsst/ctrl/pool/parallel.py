@@ -17,13 +17,15 @@ from .pool import startPool, Pool, NODE, abortOnError
 from . import log  # register pickle functions for pex_logging
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
-           "BatchCmdLineTask", "BatchPoolTask",]
+           "BatchCmdLineTask", "BatchPoolTask", ]
 
-UMASK = "002" # umask to set
+UMASK = "002"  # umask to set
 
 # Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
 # http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
 _quote_pos = re.compile('(?=[^-0-9a-zA-Z_./\n])')
+
+
 def shQuote(arg):
     r"""Quote the argument for the shell.
 
@@ -34,13 +36,15 @@ def shQuote(arg):
     """
     # This is the logic emacs uses
     if arg:
-        return _quote_pos.sub('\\\\', arg).replace('\n',"'\n'")
+        return _quote_pos.sub('\\\\', arg).replace('\n', "'\n'")
     else:
         return "''"
+
 
 def shCommandFromArgs(args):
     """Convert a list of shell arguments to a shell command-line"""
     return ' '.join([shQuote(a) for a in args])
+
 
 def processStats():
     """Collect Linux-specific process statistics
@@ -55,10 +59,12 @@ def processStats():
             result[key] = value.strip()
     return result
 
+
 def printProcessStats():
     """Print the process statistics to the log"""
     from lsst.pex.logging import getDefaultLog
     getDefaultLog().info("Process stats for %s: %s" % (NODE, processStats()))
+
 
 class Batch(object):
     """Base class for batch submission"""
@@ -171,6 +177,7 @@ class Batch(object):
 
 class PbsBatch(Batch):
     """Batch submission with PBS"""
+
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
@@ -181,18 +188,19 @@ class PbsBatch(Batch):
         if self.numCores > 0:
             raise RuntimeError("PBS does not support setting the number of cores")
         return "\n".join([
-                          "#PBS %s" % self.options if self.options is not None else "",
-                          "#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
-                          "#PBS -l walltime=%d" % walltime if walltime is not None else "",
-                          "#PBS -o %s" % self.outputDir if self.outputDir is not None else "",
-                          "#PBS -N %s" % self.jobName if self.jobName is not None else "",
-                          "#PBS -q %s" % self.queue if self.queue is not None else "",
-                          "#PBS -j oe",
-                          "#PBS -W umask=%s" % UMASK,
-                          ])
+            "#PBS %s" % self.options if self.options is not None else "",
+            "#PBS -l nodes=%d:ppn=%d" % (self.numNodes, self.numProcsPerNode),
+            "#PBS -l walltime=%d" % walltime if walltime is not None else "",
+            "#PBS -o %s" % self.outputDir if self.outputDir is not None else "",
+            "#PBS -N %s" % self.jobName if self.jobName is not None else "",
+            "#PBS -q %s" % self.queue if self.queue is not None else "",
+            "#PBS -j oe",
+            "#PBS -W umask=%s" % UMASK,
+        ])
 
     def submitCommand(self, scriptName):
         return "qsub %s -V %s" % (self.submit if self.submit is not None else "", scriptName)
+
 
 class SlurmBatch(Batch):
     """Batch submission with Slurm"""
@@ -211,7 +219,7 @@ class SlurmBatch(Batch):
         filename = os.path.join(outputDir, (self.jobName if self.jobName is not None else "slurm") + ".o%j")
         return "\n".join([("#SBATCH --nodes=%d" % self.numNodes) if self.numNodes > 0 else "",
                           ("#SBATCH --ntasks-per-node=%d" % self.numProcsPerNode) if
-                              self.numProcsPerNode > 0 else "",
+                          self.numProcsPerNode > 0 else "",
                           ("#SBATCH --ntasks=%d" % self.numCores) if self.numCores > 0 else "",
                           "#SBATCH --time=%d" % max(walltime/60.0 + 0.5, 1) if walltime is not None else "",
                           "#SBATCH --job-name=%s" % self.jobName if self.jobName is not None else "",
@@ -256,7 +264,7 @@ class SmpBatch(Batch):
 BATCH_TYPES = {'pbs': PbsBatch,
                'slurm': SlurmBatch,
                'smp': SmpBatch,
-               } # Mapping batch type --> Batch class
+               }  # Mapping batch type --> Batch class
 
 
 class BatchArgumentParser(argparse.ArgumentParser):
@@ -392,7 +400,7 @@ class BatchCmdLineTask(CmdLineTask):
         batchArgs = batchParser.parse_args(config=cls.ConfigClass(), args=args, override=cls.applyOverrides,
                                            **kwargs)
 
-        if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent): # Write config, schema
+        if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent):  # Write config, schema
             taskParser.error("Error in task preparation")
 
         numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
@@ -482,6 +490,7 @@ class BatchPoolTask(BatchCmdLineTask):
 
 class BatchTaskRunner(TaskRunner):
     """Run a Task individually on a list of inputs using the MPI process pool"""
+
     def __init__(self, *args, **kwargs):
         """Constructor
 

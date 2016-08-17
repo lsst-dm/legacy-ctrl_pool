@@ -29,7 +29,8 @@ from lsst.pipe.base import Struct
 
 __all__ = ["Comm", "Pool", "startPool", "abortOnError", "NODE", ]
 
-NODE = "%s:%d" % (os.uname()[1], os.getpid()) # Name of node
+NODE = "%s:%d" % (os.uname()[1], os.getpid())  # Name of node
+
 
 def unpickleInstanceMethod(obj, name):
     """Unpickle an instance method
@@ -38,6 +39,7 @@ def unpickleInstanceMethod(obj, name):
     pickle needs to find it.
     """
     return getattr(obj, name)
+
 
 def pickleInstanceMethod(method):
     """Pickle an instance method
@@ -61,6 +63,7 @@ def unpickleFunction(moduleName, funcName):
     import importlib
     module = importlib.import_module(moduleName)
     return getattr(module, funcName)
+
 
 def pickleFunction(function):
     """Pickle a function
@@ -174,7 +177,7 @@ def pickleSniffer(abort=False):
         yield
     except Exception as e:
         if (not isinstance(e.message, basestring) or not "SwigPyObject" in e.message or
-            not "pickle" in e.message):
+                not "pickle" in e.message):
             raise
         import sys
         import traceback
@@ -199,6 +202,7 @@ def pickleSniffer(abort=False):
         if abort:
             mpi.COMM_WORLD.Abort(1)
 
+
 def catchPicklingError(func):
     """Function decorator to catch errors in pickling and print something useful"""
     @wraps(func)
@@ -206,6 +210,7 @@ def catchPicklingError(func):
         with pickleSniffer(True):
             return func(*args, **kwargs)
     return wrapper
+
 
 class Comm(mpi.Intracomm):
     """Wrapper to mpi4py's MPI.Intracomm class to avoid busy-waiting.
@@ -224,7 +229,7 @@ class Comm(mpi.Intracomm):
         @param barrierSleep    Sleep time (seconds) for Barrier()
         """
         self = super(Comm, cls).__new__(cls, comm.Dup())
-        self._barrierComm = None # Duplicate communicator used for Barrier point-to-point checking
+        self._barrierComm = None  # Duplicate communicator used for Barrier point-to-point checking
         self._recvSleep = recvSleep
         self._barrierSleep = barrierSleep
         return self
@@ -271,9 +276,9 @@ class Comm(mpi.Intracomm):
             return super(Comm, self).bcast(value, root=root)
 
     def Free(self):
-       if self._barrierComm is not None:
-           self._barrierComm.Free()
-       super(Comm, self).Free()
+        if self._barrierComm is not None:
+            self._barrierComm.Free()
+        super(Comm, self).Free()
 
 
 class NoOp(object):
@@ -283,12 +288,15 @@ class NoOp(object):
 
 class Tags(object):
     """Provides tag numbers by symbolic name in attributes"""
+
     def __init__(self, *nameList):
         self._nameList = nameList
         for i, name in enumerate(nameList, 1):
             setattr(self, name, i)
+
     def __repr__(self):
         return self.__class__.__name__ + repr(self._nameList)
+
     def __reduce__(self):
         return self.__class__, tuple(self._nameList)
 
@@ -299,6 +307,7 @@ class Cache(Struct):
     Includes a communicator by default, to allow intercommunication
     between nodes.
     """
+
     def __init__(self, comm):
         super(Cache, self).__init__(comm=comm)
 
@@ -533,7 +542,7 @@ class PoolMaster(PoolNode):
         self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
         # Parcel out first set of data
-        queue = zip(range(num), dataList) # index, data
+        queue = zip(range(num), dataList)  # index, data
         resultList = [None]*num
         initial = [None if i == self.rank else queue.pop(0) if queue else NoOp() for
                    i in range(self.size)]
@@ -596,7 +605,7 @@ class PoolMaster(PoolNode):
 
         # Divide up the jobs
         # Try to give root the least to do, so it also has time to manage
-        queue = zip(range(num), dataList) # index, data
+        queue = zip(range(num), dataList)  # index, data
         if num < self.size:
             distribution = [[queue[i]] for i in range(num)]
             distribution.insert(self.rank, [])
@@ -910,9 +919,11 @@ class PoolWrapperMeta(type):
 class PoolWrapper(object):
     """Wrap PoolMaster to automatically provide context"""
     __metaclass__ = PoolWrapperMeta
+
     def __init__(self, context="default"):
         self._pool = PoolMaster._instance
         self._context = context
+
     def __getattr__(self, name):
         return getattr(self._pool, name)
 
@@ -956,6 +967,6 @@ def startPool(comm=None, root=0, killSlaves=True):
     slave = PoolSlave(comm, root=root)
     slave.run()
     if killSlaves:
-        del slave # Required to prevent segmentation fault on exit
+        del slave  # Required to prevent segmentation fault on exit
         sys.exit()
     return slave

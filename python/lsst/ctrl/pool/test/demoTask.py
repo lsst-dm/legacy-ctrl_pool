@@ -5,7 +5,7 @@ from lsst.ctrl.pool.pool import Pool
 from lsst.pipe.base import ArgumentParser
 from lsst.pex.config import Config
 
-__all__ = ["DemoTask",]
+__all__ = ["DemoTask", ]
 
 
 class DemoTask(BatchPoolTask):
@@ -15,7 +15,7 @@ class DemoTask(BatchPoolTask):
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
-        kwargs.pop('doBatch', False) # Unused
+        kwargs.pop('doBatch', False)  # Unused
         parser = ArgumentParser(name="demo", *args, **kwargs)
         parser.add_id_argument("--id", datasetType="raw", level="visit",
                                help="data ID, e.g. --id visit=12345")
@@ -69,8 +69,9 @@ class DemoTask(BatchPoolTask):
 
     def _getConfigName(self):
         return None
+
     def _getMetadataName(self):
         return None
+
     def _getEupsVersionsName(self):
         return None
-
