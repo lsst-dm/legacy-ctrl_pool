@@ -515,7 +515,7 @@ class BatchTaskRunner(TaskRunner):
                 # Run the task using self.__call__
                 resultList = pool.map(self, targetList)
             else:
-                log.warn("Not running the task because there is no data to process; "
+                parsedCmd.log.warn("Not running the task because there is no data to process; "
                     "you may preview data using \"--show data\"")
                 resultList = []
 
