@@ -246,7 +246,7 @@ class Comm(mpi.Intracomm):
         sts = mpi.Status()
         while not self.Iprobe(source=source, tag=tag, status=sts):
             time.sleep(self._recvSleep)
-        return super(Comm, self).recv(obj=obj, source=sts.source, tag=sts.tag, status=status)
+        return super(Comm, self).recv(buf=obj, source=sts.source, tag=sts.tag, status=status)
 
     def send(self, obj=None, *args, **kwargs):
         with PickleHolder(obj):
