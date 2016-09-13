@@ -695,7 +695,7 @@ class PoolMaster(PoolNode):
         self.log("instruct")
         self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
-        requestList = self.comm.gather(root=self.root)
+        requestList = self.comm.gather(None, root=self.root)
         self.log("listen", requestList)
         initial = [dataList[index] if index >= 0 else None for index in requestList]
         self.log("scatter jobs", initial)
