@@ -122,7 +122,8 @@ class PickleHolder(object):
 
     def __new__(cls, hold=None):
         if cls._instance is None:
-            cls._instance = super(PickleHolder, cls).__new__(cls, hold)
+            cls._instance = super(PickleHolder, cls).__new__(cls)
+            cls._instance.__init__(hold)
             cls._instance.obj = None
         return cls._instance
 
