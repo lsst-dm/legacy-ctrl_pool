@@ -816,7 +816,7 @@ class PoolSlave(PoolNode):
         self.log("waiting for instruction")
         tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
-        job = self.comm.scatter(root=self.root)
+        job = self.comm.scatter(None, root=self.root)
 
         while not isinstance(job, NoOp):
             index, data = job
@@ -855,7 +855,7 @@ class PoolSlave(PoolNode):
         self.log("request job", index)
         self.comm.gather(index, root=self.root)
         self.log("waiting for job")
-        data = self.comm.scatter(root=self.root)
+        data = self.comm.scatter(None, root=self.root)
 
         while index >= 0:
             self.log("running job")
