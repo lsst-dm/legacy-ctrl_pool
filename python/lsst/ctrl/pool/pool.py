@@ -697,7 +697,7 @@ class PoolMaster(PoolNode):
 
         requestList = self.comm.gather(None, root=self.root)
         self.log("listen", requestList)
-        initial = [dataList[index] if index >= 0 else None for index in requestList]
+        initial = [dataList[index] if (index is not None and index >= 0) else None for index in requestList]
         self.log("scatter jobs", initial)
         self.comm.scatter(initial, root=self.root)
         pending = min(num, self.size - 1)
