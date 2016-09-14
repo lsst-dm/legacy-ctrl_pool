@@ -1,7 +1,10 @@
+from future import standard_library
+standard_library.install_aliases()
 import os
-import copy_reg
+import copyreg
 
 import lsst.pex.logging as pexLog
+
 
 def pickleLog(log):
     """Pickle a log
@@ -12,8 +15,9 @@ def pickleLog(log):
     """
     return pexLog.getDefaultLog, tuple()
 
-copy_reg.pickle(pexLog.Log, pickleLog)
-copy_reg.pickle(pexLog.ScreenLog, pickleLog)
+copyreg.pickle(pexLog.Log, pickleLog)
+copyreg.pickle(pexLog.ScreenLog, pickleLog)
+
 
 def jobLog(job):
     """Add a job-specific log destination"""
@@ -21,4 +25,3 @@ def jobLog(job):
         return
     machine = os.uname()[1].split(".")[0]
     pexLog.getDefaultLog().addDestination(job + ".%s.%d" % (machine, os.getpid()))
-

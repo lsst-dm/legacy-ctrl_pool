@@ -1,3 +1,9 @@
+from future import standard_library
+standard_library.install_aliases()
+from builtins import zip
+from builtins import range
+from past.builtins import basestring
+from builtins import object
 # MPI process pool
 # Copyright 2013 Paul A. Price
 #
@@ -19,17 +25,19 @@ import os
 import sys
 import time
 import types
-import copy_reg
+import copyreg
 from functools import wraps, partial
 from contextlib import contextmanager
 
 import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
+from future.utils import with_metaclass
 
 __all__ = ["Comm", "Pool", "startPool", "abortOnError", "NODE", ]
 
-NODE = "%s:%d" % (os.uname()[1], os.getpid()) # Name of node
+NODE = "%s:%d" % (os.uname()[1], os.getpid())  # Name of node
+
 
 def unpickleInstanceMethod(obj, name):
     """Unpickle an instance method
@@ -38,6 +46,7 @@ def unpickleInstanceMethod(obj, name):
     pickle needs to find it.
     """
     return getattr(obj, name)
+
 
 def pickleInstanceMethod(method):
     """Pickle an instance method
@@ -49,7 +58,7 @@ def pickleInstanceMethod(method):
     name = method.__name__
     return unpickleInstanceMethod, (obj, name)
 
-copy_reg.pickle(types.MethodType, pickleInstanceMethod)
+copyreg.pickle(types.MethodType, pickleInstanceMethod)
 
 
 def unpickleFunction(moduleName, funcName):
@@ -61,6 +70,7 @@ def unpickleFunction(moduleName, funcName):
     import importlib
     module = importlib.import_module(moduleName)
     return getattr(module, funcName)
+
 
 def pickleFunction(function):
     """Pickle a function
@@ -78,7 +88,7 @@ def pickleFunction(function):
     funcName = function.__name__
     return unpickleFunction, (moduleName, funcName)
 
-copy_reg.pickle(types.FunctionType, pickleFunction)
+copyreg.pickle(types.FunctionType, pickleFunction)
 
 
 def abortOnError(func):
@@ -87,7 +97,7 @@ def abortOnError(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception, e:
+        except Exception as e:
             sys.stderr.write("%s on %s in %s: %s\n" % (type(e).__name__, NODE, func.__name__, e))
             import traceback
             traceback.print_exc(file=sys.stderr)
@@ -112,7 +122,8 @@ class PickleHolder(object):
 
     def __new__(cls, hold=None):
         if cls._instance is None:
-            cls._instance = super(PickleHolder, cls).__new__(cls, hold)
+            cls._instance = super(PickleHolder, cls).__new__(cls)
+            cls._instance.__init__(hold)
             cls._instance.obj = None
         return cls._instance
 
@@ -173,8 +184,7 @@ def pickleSniffer(abort=False):
     try:
         yield
     except Exception as e:
-        if (not isinstance(e.message, basestring) or not "SwigPyObject" in e.message or
-            not "pickle" in e.message):
+        if "SwigPyObject" not in str(e) or "pickle" not in str(e):
             raise
         import sys
         import traceback
@@ -199,6 +209,7 @@ def pickleSniffer(abort=False):
         if abort:
             mpi.COMM_WORLD.Abort(1)
 
+
 def catchPicklingError(func):
     """Function decorator to catch errors in pickling and print something useful"""
     @wraps(func)
@@ -206,6 +217,7 @@ def catchPicklingError(func):
         with pickleSniffer(True):
             return func(*args, **kwargs)
     return wrapper
+
 
 class Comm(mpi.Intracomm):
     """Wrapper to mpi4py's MPI.Intracomm class to avoid busy-waiting.
@@ -224,7 +236,7 @@ class Comm(mpi.Intracomm):
         @param barrierSleep    Sleep time (seconds) for Barrier()
         """
         self = super(Comm, cls).__new__(cls, comm.Dup())
-        self._barrierComm = None # Duplicate communicator used for Barrier point-to-point checking
+        self._barrierComm = None  # Duplicate communicator used for Barrier point-to-point checking
         self._recvSleep = recvSleep
         self._barrierSleep = barrierSleep
         return self
@@ -234,7 +246,7 @@ class Comm(mpi.Intracomm):
         sts = mpi.Status()
         while not self.Iprobe(source=source, tag=tag, status=sts):
             time.sleep(self._recvSleep)
-        return super(Comm, self).recv(obj=obj, source=sts.source, tag=sts.tag, status=status)
+        return super(Comm, self).recv(buf=obj, source=sts.source, tag=sts.tag, status=status)
 
     def send(self, obj=None, *args, **kwargs):
         with PickleHolder(obj):
@@ -271,9 +283,9 @@ class Comm(mpi.Intracomm):
             return super(Comm, self).bcast(value, root=root)
 
     def Free(self):
-       if self._barrierComm is not None:
-           self._barrierComm.Free()
-       super(Comm, self).Free()
+        if self._barrierComm is not None:
+            self._barrierComm.Free()
+        super(Comm, self).Free()
 
 
 class NoOp(object):
@@ -283,12 +295,15 @@ class NoOp(object):
 
 class Tags(object):
     """Provides tag numbers by symbolic name in attributes"""
+
     def __init__(self, *nameList):
         self._nameList = nameList
         for i, name in enumerate(nameList, 1):
             setattr(self, name, i)
+
     def __repr__(self):
         return self.__class__.__name__ + repr(self._nameList)
+
     def __reduce__(self):
         return self.__class__, tuple(self._nameList)
 
@@ -299,6 +314,7 @@ class Cache(Struct):
     Includes a communicator by default, to allow intercommunication
     between nodes.
     """
+
     def __init__(self, comm):
         super(Cache, self).__init__(comm=comm)
 
@@ -329,14 +345,12 @@ class SingletonMeta(type):
         return self._instance
 
 
-class Debugger(object):
+class Debugger(with_metaclass(SingletonMeta, object)):
     """Debug logger singleton
 
     Disabled by default; to enable, do: 'Debugger().enabled = True'
     You can also redirect the output by changing the 'out' attribute.
     """
-
-    __metaclass__ = SingletonMeta
 
     def __init__(self):
         self.enabled = False
@@ -358,15 +372,13 @@ class Debugger(object):
             self.out.write("\n")
 
 
-class PoolNode(object):
+class PoolNode(with_metaclass(SingletonMeta, object)):
     """Node in MPI process pool
 
     WARNING: You should not let a pool instance hang around at program
     termination, as the garbage collection behaves differently, and may
     cause a segmentation fault (signal 11).
     """
-
-    __metaclass__ = SingletonMeta
 
     def __init__(self, comm=None, root=0):
         if comm is None:
@@ -426,7 +438,7 @@ class PoolNode(object):
         self.log("storing", context, kwargs)
         if not context in self._store:
             self._store[context] = {}
-        for name, value in kwargs.iteritems():
+        for name, value in kwargs.items():
             self._store[context][name] = value
 
     def storeDel(self, context, *nameList):
@@ -521,7 +533,7 @@ class PoolMaster(PoolNode):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, list(zip(list(range(num)), dataList)), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
             return self.mapNoBalance(context, func, dataList, *args, **kwargs)
@@ -533,7 +545,7 @@ class PoolMaster(PoolNode):
         self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
         # Parcel out first set of data
-        queue = zip(range(num), dataList) # index, data
+        queue = list(zip(range(num), dataList))  # index, data
         resultList = [None]*num
         initial = [None if i == self.rank else queue.pop(0) if queue else NoOp() for
                    i in range(self.size)]
@@ -586,7 +598,7 @@ class PoolMaster(PoolNode):
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, list(zip(range(num), dataList)), *args, **kwargs)
 
         self.command("mapNoBalance")
 
@@ -596,7 +608,7 @@ class PoolMaster(PoolNode):
 
         # Divide up the jobs
         # Try to give root the least to do, so it also has time to manage
-        queue = zip(range(num), dataList) # index, data
+        queue = list(zip(range(num), dataList))  # index, data
         if num < self.size:
             distribution = [[queue[i]] for i in range(num)]
             distribution.insert(self.rank, [])
@@ -672,7 +684,7 @@ class PoolMaster(PoolNode):
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return self._processQueue(context, func, zip(range(num), dataList), *args, **kwargs)
+            return self._processQueue(context, func, list(zip(range(num), dataList)), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
             return self.mapNoBalance(context, func, dataList, *args, **kwargs)
@@ -683,9 +695,9 @@ class PoolMaster(PoolNode):
         self.log("instruct")
         self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
 
-        requestList = self.comm.gather(root=self.root)
+        requestList = self.comm.gather(None, root=self.root)
         self.log("listen", requestList)
-        initial = [dataList[index] if index >= 0 else None for index in requestList]
+        initial = [dataList[index] if (index is not None and index >= 0) else None for index in requestList]
         self.log("scatter jobs", initial)
         self.comm.scatter(initial, root=self.root)
         pending = min(num, self.size - 1)
@@ -804,7 +816,7 @@ class PoolSlave(PoolNode):
         self.log("waiting for instruction")
         tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
-        job = self.comm.scatter(root=self.root)
+        job = self.comm.scatter(None, root=self.root)
 
         while not isinstance(job, NoOp):
             index, data = job
@@ -838,12 +850,12 @@ class PoolSlave(PoolNode):
         """Process the same scattered data processed previously"""
         self.log("waiting for instruction")
         tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
-        queue = self._cache[context].keys() if context in self._cache else None
+        queue = list(self._cache[context].keys()) if context in self._cache else None
         index = queue.pop(0) if queue else -1
         self.log("request job", index)
         self.comm.gather(index, root=self.root)
         self.log("waiting for job")
-        data = self.comm.scatter(root=self.root)
+        data = self.comm.scatter(None, root=self.root)
 
         while index >= 0:
             self.log("running job")
@@ -907,12 +919,13 @@ class PoolWrapperMeta(type):
         return instance
 
 
-class PoolWrapper(object):
+class PoolWrapper(with_metaclass(PoolWrapperMeta, object)):
     """Wrap PoolMaster to automatically provide context"""
-    __metaclass__ = PoolWrapperMeta
+
     def __init__(self, context="default"):
         self._pool = PoolMaster._instance
         self._context = context
+
     def __getattr__(self, name):
         return getattr(self._pool, name)
 
@@ -956,6 +969,6 @@ def startPool(comm=None, root=0, killSlaves=True):
     slave = PoolSlave(comm, root=root)
     slave.run()
     if killSlaves:
-        del slave # Required to prevent segmentation fault on exit
+        del slave  # Required to prevent segmentation fault on exit
         sys.exit()
     return slave
