@@ -37,7 +37,7 @@ Debugger().enabled = True
 
 startPool()
 
-dataList = list(map(float, range(NUM)))
+dataList = [float(i) for i in range(NUM)]
 
 
 def context1(pool1):
