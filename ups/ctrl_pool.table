@@ -1,3 +1,4 @@
+setupRequired(python_future)
 setupRequired(daf_persistence)
 setupRequired(pipe_base)
 setupOptional(mpi4py)
