@@ -262,7 +262,9 @@ class SmpBatch(Batch):
         return "exec %s" % scriptName
 
 
-BATCH_TYPES = {'pbs': PbsBatch,
+BATCH_TYPES = {'none' : None,
+               'None' : None,
+               'pbs': PbsBatch,
                'slurm': SlurmBatch,
                'smp': SmpBatch,
                }  # Mapping batch type --> Batch class
@@ -334,6 +336,10 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'submit': 'batchSubmit',
                       'options': 'batchOptions',
                       }
+
+        if BATCH_TYPES[args.batchType] is None:
+            return None
+
         # kwargs is a dict that maps Batch init kwarg names to parsed arguments attribute *values*
         kwargs = {k: getattr(args, v) for k, v in argMapping.items()}
         return BATCH_TYPES[args.batchType](**kwargs)
@@ -404,11 +410,16 @@ class BatchCmdLineTask(CmdLineTask):
         if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent):  # Write config, schema
             taskParser.error("Error in task preparation")
 
-        numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
-        walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numCores)
+        if batchArgs.batch is None:     # don't use a batch system
+            sys.argv = [sys.argv[0]] + batchArgs.leftover # Remove all batch arguments
 
-        command = cls.batchCommand(batchArgs)
-        batchArgs.batch.run(command, walltime=walltime)
+            return cls.parseAndRun()
+        else:
+            numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
+            walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numCores)
+
+            command = cls.batchCommand(batchArgs)
+            batchArgs.batch.run(command, walltime=walltime)
 
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numCores):
