@@ -1,5 +1,6 @@
 *.pyc
 .scon*
+config.log
 ups/ctrl_pool.cfgc
 python/lsst/ctrl/pool/version.py
 bin/ctrlPoolDemo.py
