@@ -14,7 +14,7 @@ import argparse
 import traceback
 import contextlib
 from lsst.pipe.base import CmdLineTask, TaskRunner
-from .pool import startPool, Pool, NODE, abortOnError
+from .pool import startPool, Pool, NODE, abortOnError, setBatchType
 from . import log  # register pickle functions for pex_logging
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
@@ -410,6 +410,8 @@ class BatchCmdLineTask(CmdLineTask):
         if not cls.RunnerClass(cls, batchArgs.parent).precall(batchArgs.parent):  # Write config, schema
             taskParser.error("Error in task preparation")
 
+        setBatchType(batchArgs.batch)
+            
         if batchArgs.batch is None:     # don't use a batch system
             sys.argv = [sys.argv[0]] + batchArgs.leftover # Remove all batch arguments
 

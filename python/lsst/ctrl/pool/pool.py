@@ -34,7 +34,7 @@ import mpi4py.MPI as mpi
 from lsst.pipe.base import Struct
 from future.utils import with_metaclass
 
-__all__ = ["Comm", "Pool", "startPool", "abortOnError", "NODE", ]
+__all__ = ["Comm", "Pool", "startPool", "setBatchType", "getBatchType", "abortOnError", "NODE", ]
 
 NODE = "%s:%d" % (os.uname()[1], os.getpid())  # Name of node
 
@@ -90,6 +90,19 @@ def pickleFunction(function):
 
 copyreg.pickle(types.FunctionType, pickleFunction)
 
+try:
+    _batchType
+except NameError:
+    _batchType = "unknown"
+
+def getBatchType():
+    """Return a string giving the type of batch system in use"""
+    return _batchType
+
+def setBatchType(batchType):
+    """Return a string giving the type of batch system in use"""
+    global _batchType
+    _batchType = batchType
 
 def abortOnError(func):
     """Function decorator to throw an MPI abort on an unhandled exception"""
@@ -101,7 +114,10 @@ def abortOnError(func):
             sys.stderr.write("%s on %s in %s: %s\n" % (type(e).__name__, NODE, func.__name__, e))
             import traceback
             traceback.print_exc(file=sys.stderr)
-            mpi.COMM_WORLD.Abort(1)
+            if getBatchType() is not None:
+                mpi.COMM_WORLD.Abort(1)
+            else:
+                raise
     return wrapper
 
 
@@ -207,8 +223,10 @@ def pickleSniffer(abort=False):
         else:
             sys.stderr.write("Object that could not be pickled: %s\n" % obj)
         if abort:
-            mpi.COMM_WORLD.Abort(1)
-
+            if getBatchType() is not None:
+                mpi.COMM_WORLD.Abort(1)
+            else:
+                sys.exit(1)
 
 def catchPicklingError(func):
     """Function decorator to catch errors in pickling and print something useful"""
