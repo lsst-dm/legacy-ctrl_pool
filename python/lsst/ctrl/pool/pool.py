@@ -300,6 +300,30 @@ class Comm(mpi.Intracomm):
         with PickleHolder(value):
             return super(Comm, self).bcast(value, root=root)
 
+    def scatter(self, dataList, root=0, tag=0):
+        """Scatter data across the nodes
+
+        The default version apparently pickles the entire 'dataList',
+        which can cause errors if the pickle size grows over 2^31 bytes
+        due to fundamental problems with pickle in python 2. Instead,
+        we send the data to each slave node in turn; this reduces the
+        pickle size.
+
+        @param dataList  List of data to distribute; one per node
+            (including root)
+        @param root  Index of root node
+        @param tag  Message tag (integer)
+        @return  Data for this node
+        """
+        if self.Get_rank() == root:
+            for rank, data in enumerate(dataList):
+                if rank == root:
+                    continue
+                self.send(data, rank, tag=tag)
+            return dataList[root]
+        else:
+            return self.recv(source=root, tag=tag)
+
     def Free(self):
         if self._barrierComm is not None:
             self._barrierComm.Free()
