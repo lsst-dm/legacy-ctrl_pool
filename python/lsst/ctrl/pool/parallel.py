@@ -15,7 +15,7 @@ import traceback
 import contextlib
 from lsst.pipe.base import CmdLineTask, TaskRunner
 from .pool import startPool, Pool, NODE, abortOnError, setBatchType
-from . import log  # register pickle functions for pex_logging
+from . import log  # register pickle functions for log
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
            "BatchCmdLineTask", "BatchPoolTask", ]
@@ -63,8 +63,9 @@ def processStats():
 
 def printProcessStats():
     """Print the process statistics to the log"""
-    from lsst.pex.logging import getDefaultLog
-    getDefaultLog().info("Process stats for %s: %s" % (NODE, processStats()))
+    from lsst.log import Log
+    log = Log.getDefaultLogger()
+    log.info("Process stats for %s: %s" % (NODE, processStats()))
 
 
 class Batch(object):
