@@ -464,6 +464,9 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
         where the index maps to the cache, and the data is
         passed to the 'func'.
 
+        The 'func' signature should be func(cache, data, *args, **kwargs)
+        if 'context' is non-None; otherwise func(data, *args, **kwargs).
+
         @param context: Namespace for cache; None to not use cache
         @param func: function for slaves to run
         @param queue: List of (index,data) tuples to process
@@ -471,9 +474,43 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
         @param kwargs: Keyword arguments
         @return list of results from applying 'func' to dataList
         """
+        return self._reduceQueue(context, None, func, queue, *args, **kwargs)
+
+    def _reduceQueue(self, context, reducer, func, queue, *args, **kwargs):
+        """!Reduce a queue of data
+
+        The queue consists of a list of (index, data) tuples,
+        where the index maps to the cache, and the data is
+        passed to the 'func', the output of which is reduced
+        using the 'reducer' (if non-None).
+
+        The 'func' signature should be func(cache, data, *args, **kwargs)
+        if 'context' is non-None; otherwise func(data, *args, **kwargs).
+
+        The 'reducer' signature should be reducer(old, new). If the 'reducer'
+        is None, then we will return the full list of results
+
+        @param context: Namespace for cache; None to not use cache
+        @param reducer: function for master to run to reduce slave results; or None
+        @param func: function for slaves to run
+        @param queue: List of (index,data) tuples to process
+        @param args: Constant arguments
+        @param kwargs: Keyword arguments
+        @return reduced result (if reducer is non-None) or list of results
+            from applying 'func' to dataList
+        """
         if context is not None:
-            return [func(self._getCache(context, i), data, *args, **kwargs) for i, data in queue]
-        return [func(data, *args, **kwargs) for i, data in queue]
+            resultList = [func(self._getCache(context, i), data, *args, **kwargs) for i, data in queue]
+        else:
+            resultList = [func(data, *args, **kwargs) for i, data in queue]
+        if reducer is None:
+            return resultList
+        if len(resultList) == 0:
+            return None
+        output = resultList.pop(0)
+        for result in resultList:
+            output = reducer(output, result)
+        return output
 
     def storeSet(self, context, **kwargs):
         """Set values in store for a particular context"""
@@ -547,8 +584,6 @@ class PoolMaster(PoolNode):
         self.log("command", cmd)
         self.comm.broadcast(cmd, root=self.root)
 
-    @abortOnError
-    @catchPicklingError
     def map(self, context, func, dataList, *args, **kwargs):
         """!Scatter work to slaves and gather the results
 
@@ -572,13 +607,46 @@ class PoolMaster(PoolNode):
         @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
+        return self.reduce(context, None, func, dataList, *args, **kwargs)
+
+    @abortOnError
+    @catchPicklingError
+    def reduce(self, context, reducer, func, dataList, *args, **kwargs):
+        """!Scatter work to slaves and reduce the results
+
+        Work is distributed dynamically, so that slaves that finish
+        quickly will receive more work.
+
+        Each slave applies the function to the data they're provided.
+        The slaves may optionally be passed a cache instance, which
+        they can use to store data for subsequent executions (to ensure
+        subsequent data is distributed in the same pattern as before,
+        use the 'mapToPrevious' method).  The cache also contains
+        data that has been stored on the slaves.
+
+        The 'func' signature should be func(cache, data, *args, **kwargs)
+        if 'context' is non-None; otherwise func(data, *args, **kwargs).
+
+        The 'reducer' signature should be reducer(old, new). If the 'reducer'
+        is None, then we will return the full list of results
+
+        @param context: Namespace for cache
+        @param reducer: function for master to run to reduce slave results; or None
+        @param func: function for slaves to run; must be picklable
+        @param dataList: List of data to distribute to slaves; must be picklable
+        @param args: List of constant arguments
+        @param kwargs: Dict of constant arguments
+        @return reduced result (if reducer is non-None) or list of results
+            from applying 'func' to dataList
+        """
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(context, func, list(zip(list(range(num)), dataList)), *args, **kwargs)
+            return self._reduceQueue(context, reducer, func, list(zip(list(range(num)), dataList)),
+                                     *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.mapNoBalance(context, func, dataList, *args, **kwargs)
+            return self.reduceNoBalance(context, reducer, func, dataList, *args, **kwargs)
 
         self.command("map")
 
@@ -588,7 +656,7 @@ class PoolMaster(PoolNode):
 
         # Parcel out first set of data
         queue = list(zip(range(num), dataList))  # index, data
-        resultList = [None]*num
+        output = [None]*num if reducer is None else None
         initial = [None if i == self.rank else queue.pop(0) if queue else NoOp() for
                    i in range(self.size)]
         pending = min(num, self.size - 1)
@@ -600,7 +668,10 @@ class PoolMaster(PoolNode):
             index, result = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
             source = status.source
             self.log("gather from slave", source)
-            resultList[index] = result
+            if reducer is None:
+                output[index] = result
+            else:
+                output = reducer(output, result) if output is not None else result
 
             if queue:
                 job = queue.pop(0)
@@ -611,10 +682,8 @@ class PoolMaster(PoolNode):
             self.comm.send(job, source, tag=tags.work)
 
         self.log("done")
-        return resultList
+        return output
 
-    @abortOnError
-    @catchPicklingError
     def mapNoBalance(self, context, func, dataList, *args, **kwargs):
         """!Scatter work to slaves and gather the results
 
@@ -637,10 +706,41 @@ class PoolMaster(PoolNode):
         @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
+        return self.reduceNoBalance(context, None, func, dataList, *args, **kwargs)
+
+    @abortOnError
+    @catchPicklingError
+    def reduceNoBalance(self, context, reducer, func, dataList, *args, **kwargs):
+        """!Scatter work to slaves and reduce the results
+
+        Work is distributed statically, so there is no load balancing.
+
+        Each slave applies the function to the data they're provided.
+        The slaves may optionally be passed a cache instance, which
+        they can store data in for subsequent executions (to ensure
+        subsequent data is distributed in the same pattern as before,
+        use the 'mapToPrevious' method).  The cache also contains
+        data that has been stored on the slaves.
+
+        The 'func' signature should be func(cache, data, *args, **kwargs)
+        if 'context' is true; otherwise func(data, *args, **kwargs).
+
+        The 'reducer' signature should be reducer(old, new). If the 'reducer'
+        is None, then we will return the full list of results
+
+        @param context: Namespace for cache
+        @param reducer: function for master to run to reduce slave results; or None
+        @param func: function for slaves to run; must be picklable
+        @param dataList: List of data to distribute to slaves; must be picklable
+        @param args: List of constant arguments
+        @param kwargs: Dict of constant arguments
+        @return reduced result (if reducer is non-None) or list of results
+            from applying 'func' to dataList
+        """
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
-            return self._processQueue(context, func, list(zip(range(num), dataList)), *args, **kwargs)
+            return self._reduceQueue(context, reducer, func, list(zip(range(num), dataList)), *args, **kwargs)
 
         self.command("mapNoBalance")
 
@@ -676,15 +776,22 @@ class PoolMaster(PoolNode):
             self.comm.send(distribution[source], source, tag=tags.work)
 
         # Execute our own jobs
-        resultList = [None]*num
+        output = [None]*num if reducer is None else None
 
-        def ingestResults(nodeResults, distList):
-            for i, result in enumerate(nodeResults):
-                index = distList[i][0]
-                resultList[index] = result
+        def ingestResults(output, nodeResults, distList):
+            if reducer is None:
+                for i, result in enumerate(nodeResults):
+                    index = distList[i][0]
+                    output[index] = result
+                return output
+            if output is None:
+                output = nodeResults.pop(0)
+            for result in nodeResults:
+                output = reducer(output, result)
+            return output
 
         ourResults = self._processQueue(context, func, distribution[self.rank], *args, **kwargs)
-        ingestResults(ourResults, distribution[self.rank])
+        output = ingestResults(output, ourResults, distribution[self.rank])
 
         # Collect results
         pending = self.size - 1
@@ -693,14 +800,12 @@ class PoolMaster(PoolNode):
             slaveResults = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
             source = status.source
             self.log("gather from slave", source)
-            ingestResults(slaveResults, distribution[source])
+            output = ingestResults(output, slaveResults, distribution[source])
             pending -= 1
 
         self.log("done")
-        return resultList
+        return output
 
-    @abortOnError
-    @catchPicklingError
     def mapToPrevious(self, context, func, dataList, *args, **kwargs):
         """!Scatter work to the same target as before
 
@@ -720,16 +825,44 @@ class PoolMaster(PoolNode):
         @param kwargs: Dict of constant arguments
         @return list of results from applying 'func' to dataList
         """
+        return self.reduceToPrevious(context, None, func, dataList, *args, **kwargs)
+
+    @abortOnError
+    @catchPicklingError
+    def reduceToPrevious(self, context, reducer, func, dataList, *args, **kwargs):
+        """!Reduction where work goes to the same target as before
+
+        Work is distributed so that each slave handles the same
+        indices in the dataList as when 'map' was called.
+        This allows the right data to go to the right cache.
+
+        It is assumed that the dataList is the same length as when it was
+        passed to 'map'.
+
+        The 'func' signature should be func(cache, data, *args, **kwargs).
+
+        The 'reducer' signature should be reducer(old, new). If the 'reducer'
+        is None, then we will return the full list of results
+
+        @param context: Namespace for cache
+        @param reducer: function for master to run to reduce slave results; or None
+        @param func: function for slaves to run; must be picklable
+        @param dataList: List of data to distribute to slaves; must be picklable
+        @param args: List of constant arguments
+        @param kwargs: Dict of constant arguments
+        @return reduced result (if reducer is non-None) or list of results
+            from applying 'func' to dataList
+        """
         if context is None:
             raise ValueError("context must be set to map to same nodes as previous context")
         tags = Tags("result", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
             # Can do everything here
-            return self._processQueue(context, func, list(zip(range(num), dataList)), *args, **kwargs)
+            return self._reduceQueue(context, reducer, func, list(zip(range(num), dataList)), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.mapNoBalance(context, func, dataList, *args, **kwargs)
+            return self.reduceNoBalance(context, func, dataList, *args, **kwargs)
 
         self.command("mapToPrevious")
 
@@ -744,13 +877,16 @@ class PoolMaster(PoolNode):
         self.comm.scatter(initial, root=self.root)
         pending = min(num, self.size - 1)
 
-        resultList = [None]*num
+        output = [None]*num if reducer is None else None
         while pending > 0:
             status = mpi.Status()
             index, result, nextIndex = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
             source = status.source
             self.log("gather from slave", source)
-            resultList[index] = result
+            if reducer is None:
+                output[index] = result
+            else:
+                output = reducer(output, result) if output is None else result
 
             if nextIndex >= 0:
                 job = dataList[nextIndex]
@@ -762,7 +898,7 @@ class PoolMaster(PoolNode):
             self.log("waiting on", pending)
 
         self.log("done")
-        return resultList
+        return output
 
     @abortOnError
     @catchPicklingError
@@ -955,8 +1091,10 @@ class PoolWrapperMeta(type):
     def __call__(self, context="default"):
         instance = super(PoolWrapperMeta, self).__call__(context)
         pool = PoolMaster()
-        for name in ("map", "mapNoBalance", "mapToPrevious", "storeSet", "storeDel",
-                     "storeClear", "storeList", "cacheList", "cacheClear",):
+        for name in ("map", "mapNoBalance", "mapToPrevious",
+                     "reduce", "reduceNoBalance", "reduceToPrevious",
+                     "storeSet", "storeDel", "storeClear", "storeList",
+                     "cacheList", "cacheClear",):
             setattr(instance, name, partial(getattr(pool, name), context))
         return instance
 
