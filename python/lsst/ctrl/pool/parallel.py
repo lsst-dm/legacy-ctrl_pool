@@ -20,7 +20,7 @@ from . import log  # register pickle functions for log
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
            "BatchCmdLineTask", "BatchPoolTask", ]
 
-UMASK = "002"  # umask to set
+UMASK = 0o002  # umask to set
 
 # Functions to convert a list of arguments to a quoted shell command, provided by Dave Abrahams
 # http://stackoverflow.com/questions/967443/python-module-to-shellquote-unshellquote
@@ -120,7 +120,7 @@ class Batch(object):
                           "date",
                           "echo \"mpiexec is at: $(which mpiexec)\"",
                           "ulimit -a",
-                          "umask %s" % UMASK,
+                          "umask %03o" % UMASK,
                           "echo 'umask: ' $(umask)",
                           "eups list -s",
                           "export",
@@ -197,7 +197,7 @@ class PbsBatch(Batch):
             "#PBS -N %s" % self.jobName if self.jobName is not None else "",
             "#PBS -q %s" % self.queue if self.queue is not None else "",
             "#PBS -j oe",
-            "#PBS -W umask=%s" % UMASK,
+            "#PBS -W umask=%03o" % UMASK,
         ])
 
     def submitCommand(self, scriptName):
@@ -448,7 +448,7 @@ class BatchCmdLineTask(CmdLineTask):
         """
         job = args.job if args.job is not None else "job"
         module = cls.__module__
-        script = ("import os; os.umask(%s); " +
+        script = ("import os; os.umask(%#05o); " +
                   "import lsst.ctrl.pool.log; lsst.ctrl.pool.log.jobLog(\"%s\"); ") % (UMASK, job)
 
         if args.batchStats:
