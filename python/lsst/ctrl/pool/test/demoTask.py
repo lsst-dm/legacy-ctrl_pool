@@ -1,5 +1,6 @@
 import math
 import collections
+import operator
 from lsst.ctrl.pool.parallel import BatchPoolTask
 from lsst.ctrl.pool.pool import Pool
 from lsst.pipe.base import ArgumentParser
@@ -50,7 +51,7 @@ class DemoTask(BatchPoolTask):
         dataIdList = collections.OrderedDict(sorted(dataIdList.items()))
 
         with self.logOperation("master"):
-            total = pool.reduce(lambda x, y: x + y, self.read, list(dataIdList.values()),
+            total = pool.reduce(operator.add, self.read, list(dataIdList.values()),
                                 butler=visitRef.getButler())
         self.log.info("Total number of pixels read: %d" % (total,))
 

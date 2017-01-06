@@ -26,6 +26,7 @@ import sys
 import time
 import types
 import copyreg
+import threading
 from functools import wraps, partial
 from contextlib import contextmanager
 
@@ -414,6 +415,72 @@ class Debugger(with_metaclass(SingletonMeta, object)):
             self.out.write("\n")
 
 
+class ReductionThread(threading.Thread):
+    """Thread to do reduction of results
+
+    "A thread?", you say. "What about the python GIL?"
+    Well, because we 'sleep' when there's no immediate response from the
+    slaves, that gives the thread a chance to fire; and threads are easier
+    to manage (e.g., shared memory) than a process.
+    """
+    def __init__(self, reducer, initial=None, sleep=0.1):
+        """!Constructor
+
+        The 'reducer' should take two values and return a single
+        (reduced) value.
+
+        @param reducer  Function that does the reducing
+        @param initial  Initial value for reduction, or None
+        @param sleep  Time to sleep when there's nothing to do (sec)
+        """
+        threading.Thread.__init__(self, name="reducer")
+        self._queue = []  # Queue of stuff to be reduced
+        self._lock = threading.Lock()  # Lock for the queue
+        self._reducer = reducer
+        self._sleep = sleep
+        self._result = initial  # Final result
+        self._done = threading.Event()  # Signal that everything is done
+
+    def _doReduce(self):
+        """Do the actual work
+
+        We pull the data out of the queue and release the lock before
+        operating on it. This stops us from blocking the addition of
+        new data to the queue.
+        """
+        with self._lock:
+            queue = self._queue
+            self._queue = []
+        for data in queue:
+            self._result = self._reducer(self._result, data) if self._result is not None else data
+
+    def run(self):
+        """Do the work
+
+        Thread entry point, called by Thread.start
+        """
+        while True:
+            self._doReduce()
+            if self._done.wait(self._sleep):
+                self._doReduce()
+                return
+
+    def add(self, data):
+        """Add data to the queue to be reduced"""
+        with self._lock:
+            self._queue.append(data)
+
+    def join(self):
+        """Complete the thread
+
+        Unlike Thread.join (which always returns 'None'), we return the result
+        we calculated.
+        """
+        self._done.set()
+        threading.Thread.join(self)
+        return self._result
+
+
 class PoolNode(with_metaclass(SingletonMeta, object)):
     """Node in MPI process pool
 
@@ -639,7 +706,7 @@ class PoolMaster(PoolNode):
         @return reduced result (if reducer is non-None) or list of results
             from applying 'func' to dataList
         """
-        tags = Tags("result", "work")
+        tags = Tags("request", "work")
         num = len(dataList)
         if self.size == 1 or num <= 1:
             return self._reduceQueue(context, reducer, func, list(zip(list(range(num)), dataList)),
@@ -648,11 +715,11 @@ class PoolMaster(PoolNode):
             # We're shooting ourselves in the foot using dynamic distribution
             return self.reduceNoBalance(context, reducer, func, dataList, *args, **kwargs)
 
-        self.command("map")
+        self.command("reduce")
 
         # Send function
         self.log("instruct")
-        self.comm.broadcast((tags, func, args, kwargs, context), root=self.root)
+        self.comm.broadcast((tags, func, reducer, args, kwargs, context), root=self.root)
 
         # Parcel out first set of data
         queue = list(zip(range(num), dataList))  # index, data
@@ -665,13 +732,9 @@ class PoolMaster(PoolNode):
 
         while queue or pending > 0:
             status = mpi.Status()
-            index, result = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
+            self.comm.recv(status=status, tag=tags.request, source=mpi.ANY_SOURCE)
             source = status.source
             self.log("gather from slave", source)
-            if reducer is None:
-                output[index] = result
-            else:
-                output = reducer(output, result) if output is not None else result
 
             if queue:
                 job = queue.pop(0)
@@ -680,6 +743,21 @@ class PoolMaster(PoolNode):
                 job = NoOp()
                 pending -= 1
             self.comm.send(job, source, tag=tags.work)
+
+        results = self.comm.gather(None, root=self.root)
+        if reducer is None:
+            output = [None]*num
+            for rank in range(self.size):
+                if rank == self.root:
+                    continue
+                for ii, data in results[rank]:
+                    output[ii] = data
+        else:
+            output = None
+            for rank in range(self.size):
+                if rank == self.root:
+                    continue
+                output = reducer(output, results[rank]) if output is not None else results[rank]
 
         self.log("done")
         return output
@@ -877,7 +955,12 @@ class PoolMaster(PoolNode):
         self.comm.scatter(initial, root=self.root)
         pending = min(num, self.size - 1)
 
-        output = [None]*num if reducer is None else None
+        if reducer is None:
+            output = [None]*num
+        else:
+            thread = ReductionThread(reducer)
+            thread.start()
+
         while pending > 0:
             status = mpi.Status()
             index, result, nextIndex = self.comm.recv(status=status, tag=tags.result, source=mpi.ANY_SOURCE)
@@ -886,7 +969,7 @@ class PoolMaster(PoolNode):
             if reducer is None:
                 output[index] = result
             else:
-                output = reducer(output, result) if output is None else result
+                thread.add(result)
 
             if nextIndex >= 0:
                 job = dataList[nextIndex]
@@ -896,6 +979,9 @@ class PoolMaster(PoolNode):
                 pending -= 1
 
             self.log("waiting on", pending)
+
+        if reducer is not None:
+            output = thread.join()
 
         self.log("done")
         return output
@@ -976,7 +1062,7 @@ class PoolSlave(PoolNode):
         Slave accepts commands, which are the names of methods to execute.
         This exits when a command returns a true value.
         """
-        menu = dict((cmd, getattr(self, cmd)) for cmd in ("map", "mapNoBalance", "mapToPrevious",
+        menu = dict((cmd, getattr(self, cmd)) for cmd in ("reduce", "mapNoBalance", "mapToPrevious",
                                                           "storeSet", "storeDel", "storeClear", "storeList",
                                                           "cacheList", "cacheClear", "exit",))
         self.log("waiting for command from", self.root)
@@ -989,21 +1075,27 @@ class PoolSlave(PoolNode):
         self.log("exiting")
 
     @catchPicklingError
-    def map(self):
-        """Process scattered data and return results"""
+    def reduce(self):
+        """Reduce scattered data and return results"""
         self.log("waiting for instruction")
-        tags, func, args, kwargs, context = self.comm.broadcast(None, root=self.root)
+        tags, func, reducer, args, kwargs, context = self.comm.broadcast(None, root=self.root)
         self.log("waiting for job")
         job = self.comm.scatter(None, root=self.root)
 
+        out = [] if reducer is None else None
         while not isinstance(job, NoOp):
             index, data = job
             self.log("running job")
             result = self._processQueue(context, func, [(index, data)], *args, **kwargs)[0]
-            self.comm.send((index, result), self.root, tag=tags.result)
+            if reducer is None:
+                out.append((index, result))
+            else:
+                out = reducer(out, result) if out is not None else result
+            self.comm.send(None, self.root, tag=tags.request)
             self.log("waiting for job")
             job = self.comm.recv(tag=tags.work, source=self.root)
 
+        self.comm.gather(out, root=self.root)
         self.log("done")
 
     @catchPicklingError
