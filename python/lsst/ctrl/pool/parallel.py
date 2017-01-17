@@ -72,7 +72,8 @@ class Batch(object):
     """Base class for batch submission"""
 
     def __init__(self, outputDir=None, numNodes=0, numProcsPerNode=0, numCores=0, queue=None, jobName=None,
-                 walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, options=None):
+                 walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, options=None,
+                 verbose=False):
         """!Constructor
 
         @param outputDir: output directory, or None
@@ -87,6 +88,7 @@ class Batch(object):
         @param mpiexec: options for mpiexec
         @param submit: command-line options for batch submission (e.g., for qsub, sbatch)
         @param options: options to append to script header (e.g., #PBS or #SBATCH)
+        @param verbose: produce verbose output?
         """
         if (numNodes <= 0 or numProcsPerNode <= 0) and numCores <= 0:
             raise RuntimeError("Must specify numNodes+numProcs or numCores")
@@ -103,6 +105,7 @@ class Batch(object):
         self.mpiexec = mpiexec
         self.submit = submit
         self.options = options
+        self.verbose = verbose
 
     def shebang(self):
         return "#!/bin/bash"
@@ -116,20 +119,24 @@ class Batch(object):
 
     def execution(self, command):
         """Return execution string for script to be submitted"""
-        return "\n".join([exportEnv(),
-                          "date",
-                          "echo \"mpiexec is at: $(which mpiexec)\"",
-                          "ulimit -a",
-                          "umask %03o" % UMASK,
-                          "echo 'umask: ' $(umask)",
-                          "eups list -s",
-                          "export",
-                          "cd %s" % pipes.quote(os.getcwd()),
-                          "date",
-                          "mpiexec %s %s" % (self.mpiexec, command),
-                          "date",
-                          "echo Done.",
-                          ])
+        script = [exportEnv(),
+                  "umask %03o" % UMASK,
+                  "cd %s" % pipes.quote(os.getcwd()),
+                  ]
+        if self.verbose:
+            script += ["echo \"mpiexec is at: $(which mpiexec)\"",
+                       "ulimit -a",
+                       "echo 'umask: ' $(umask)",
+                       "eups list -s",
+                       "export",
+                       "date",
+                       ]
+        script += ["mpiexec %s %s" % (self.mpiexec, command)]
+        if self.verbose:
+            script += ["date",
+                       "echo Done.",
+                       ]
+        return "\n".join(script)
 
     def createScript(self, command, walltime=None):
         """!Create script to be submitted
@@ -295,6 +302,9 @@ class BatchArgumentParser(argparse.ArgumentParser):
                            help="Expected execution time per element (sec)")
         group.add_argument("--batch-type", dest="batchType", choices=list(BATCH_TYPES.keys()), default="smp",
                            help="Batch system to use")
+        group.add_argument("--batch-verbose", dest="batchVerbose", action="store_true", default=False,
+                           help=("Enable verbose output in batch script "
+                                 "(including system environment information at batch start)?"))
         group.add_argument("--batch-output", dest="batchOutput", help="Output directory")
         group.add_argument("--batch-submit", dest="batchSubmit", help="Batch submission command-line flags")
         group.add_argument("--batch-options", dest="batchOptions", help="Header options for batch script")
@@ -336,6 +346,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
                       'mpiexec': 'mpiexec',
                       'submit': 'batchSubmit',
                       'options': 'batchOptions',
+                      'verbose': 'batchVerbose',
                       }
 
         if BATCH_TYPES[args.batchType] is None:
