@@ -460,6 +460,7 @@ class BatchCmdLineTask(CmdLineTask):
         job = args.job if args.job is not None else "job"
         module = cls.__module__
         script = ("import os; os.umask(%#05o); " +
+                  "import lsst.base; lsst.base.disableImplicitThreading(); " +
                   "import lsst.ctrl.pool.log; lsst.ctrl.pool.log.jobLog(\"%s\"); ") % (UMASK, job)
 
         if args.batchStats:
