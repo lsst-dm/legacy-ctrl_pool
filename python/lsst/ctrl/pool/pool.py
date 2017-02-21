@@ -936,7 +936,7 @@ class PoolMaster(PoolNode):
             return self._reduceQueue(context, reducer, func, list(zip(range(num), dataList)), *args, **kwargs)
         if self.size == num:
             # We're shooting ourselves in the foot using dynamic distribution
-            return self.reduceNoBalance(context, func, dataList, *args, **kwargs)
+            return self.reduceNoBalance(context, reducer, func, dataList, *args, **kwargs)
 
         self.command("mapToPrevious")
 
