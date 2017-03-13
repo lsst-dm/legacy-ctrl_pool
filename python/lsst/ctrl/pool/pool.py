@@ -732,9 +732,12 @@ class PoolMaster(PoolNode):
 
         while queue or pending > 0:
             status = mpi.Status()
-            self.comm.recv(status=status, tag=tags.request, source=mpi.ANY_SOURCE)
+            report = self.comm.recv(status=status, tag=tags.request, source=mpi.ANY_SOURCE)
             source = status.source
             self.log("gather from slave", source)
+            if reducer is None:
+                index, result = report
+                output[index] = result
 
             if queue:
                 job = queue.pop(0)
@@ -744,15 +747,8 @@ class PoolMaster(PoolNode):
                 pending -= 1
             self.comm.send(job, source, tag=tags.work)
 
-        results = self.comm.gather(None, root=self.root)
-        if reducer is None:
-            output = [None]*num
-            for rank in range(self.size):
-                if rank == self.root:
-                    continue
-                for ii, data in results[rank]:
-                    output[ii] = data
-        else:
+        if reducer is not None:
+            results = self.comm.gather(None, root=self.root)
             output = None
             for rank in range(self.size):
                 if rank == self.root:
@@ -1082,20 +1078,22 @@ class PoolSlave(PoolNode):
         self.log("waiting for job")
         job = self.comm.scatter(None, root=self.root)
 
-        out = [] if reducer is None else None
+        out = None  # Reduction result
         while not isinstance(job, NoOp):
             index, data = job
             self.log("running job")
             result = self._processQueue(context, func, [(index, data)], *args, **kwargs)[0]
             if reducer is None:
-                out.append((index, result))
+                report = (index, result)
             else:
+                report = None
                 out = reducer(out, result) if out is not None else result
-            self.comm.send(None, self.root, tag=tags.request)
+            self.comm.send(report, self.root, tag=tags.request)
             self.log("waiting for job")
             job = self.comm.recv(tag=tags.work, source=self.root)
 
-        self.comm.gather(out, root=self.root)
+        if reducer is not None:
+            self.comm.gather(out, root=self.root)
         self.log("done")
 
     @catchPicklingError
