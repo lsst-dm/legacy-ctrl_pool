@@ -72,7 +72,7 @@ class Batch(object):
     """Base class for batch submission"""
 
     def __init__(self, outputDir=None, numNodes=0, numProcsPerNode=0, numCores=0, queue=None, jobName=None,
-                 walltime=None, dryrun=False, doExec=False, mpiexec="", submit=None, options=None,
+                 walltime=0.0, dryrun=False, doExec=False, mpiexec="", submit=None, options=None,
                  verbose=False):
         """!Constructor
 
@@ -190,6 +190,8 @@ class PbsBatch(Batch):
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
+        if walltime <= 0:
+            raise RuntimeError("Non-positive walltime: %s (did you forget '--time'?)" % (walltime,))
         if self.numNodes <= 0 or self.numProcsPerNode <= 0:
             raise RuntimeError(
                 "Number of nodes (--nodes=%d) or number of processors per node (--procs=%d) not set" %
@@ -217,6 +219,8 @@ class SlurmBatch(Batch):
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
+        if walltime <= 0:
+            raise RuntimeError("Non-positive walltime: %s (did you forget '--time'?)" % (walltime,))
         if (self.numNodes <= 0 or self.numProcsPerNode <= 0) and self.numCores <= 0:
             raise RuntimeError(
                 "Number of nodes (--nodes=%d) and number of processors per node (--procs=%d) not set OR "
@@ -298,7 +302,7 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--nodes", type=int, default=0, help="Number of nodes")
         group.add_argument("--procs", type=int, default=0, help="Number of processors per node")
         group.add_argument("--cores", type=int, default=0, help="Number of cores (Slurm/SMP only)")
-        group.add_argument("--time", type=float, default=1000,
+        group.add_argument("--time", type=float, default=0,
                            help="Expected execution time per element (sec)")
         group.add_argument("--batch-type", dest="batchType", choices=list(BATCH_TYPES.keys()), default="smp",
                            help="Batch system to use")
