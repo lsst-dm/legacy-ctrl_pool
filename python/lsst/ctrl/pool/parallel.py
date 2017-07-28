@@ -477,7 +477,8 @@ class BatchCmdLineTask(CmdLineTask):
         profilePost = "\"\"\", filename=\"profile-" + job + "-%s-%d.dat\" % (os.uname()[1], os.getpid()))"
 
         return ("python -c '" + (profilePre if args.batchProfile else "") + script +
-                (profilePost if args.batchProfile else "") + "' " + shCommandFromArgs(args.leftover))
+                (profilePost if args.batchProfile else "") + "' " + shCommandFromArgs(args.leftover) +
+                " --noExit")
 
     @contextlib.contextmanager
     def logOperation(self, operation, catch=False, trace=True):
