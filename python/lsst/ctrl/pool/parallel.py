@@ -216,6 +216,22 @@ class PbsBatch(Batch):
 class SlurmBatch(Batch):
     """Batch submission with Slurm"""
 
+    @staticmethod
+    def formatWalltime(walltime):
+        """Format walltime (in seconds) as days-hours:minutes"""
+        secInDay = 3600*24
+        secInHour = 3600
+        secInMinute = 60
+        days = walltime//secInDay
+        walltime -= days*secInDay
+        hours = walltime//secInHour
+        walltime -= hours*secInHour
+        minutes = walltime//secInMinute
+        walltime -= minutes*secInMinute
+        if walltime > 0:
+            minutes += 1
+        return "%d-%d:%d" % (days, hours, minutes)
+
     def preamble(self, walltime=None):
         if walltime is None:
             walltime = self.walltime
@@ -234,7 +250,7 @@ class SlurmBatch(Batch):
                           ("#SBATCH --ntasks-per-node=%d" % self.numProcsPerNode) if
                           self.numProcsPerNode > 0 else "",
                           ("#SBATCH --ntasks=%d" % self.numCores) if self.numCores > 0 else "",
-                          "#SBATCH --time=%d" % max(walltime/60.0 + 0.5, 1) if walltime is not None else "",
+                          "#SBATCH --time=%s" % self.formatWalltime(walltime),
                           "#SBATCH --job-name=%s" % self.jobName if self.jobName is not None else "",
                           "#SBATCH -p %s" % self.queue if self.queue is not None else "",
                           "#SBATCH --output=%s" % filename,
