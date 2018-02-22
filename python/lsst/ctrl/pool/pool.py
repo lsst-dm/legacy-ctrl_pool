@@ -115,6 +115,8 @@ def abortOnError(func):
             sys.stderr.write("%s on %s in %s: %s\n" % (type(e).__name__, NODE, func.__name__, e))
             import traceback
             traceback.print_exc(file=sys.stderr)
+            sys.stdout.flush()
+            sys.stderr.flush()
             if getBatchType() is not None:
                 mpi.COMM_WORLD.Abort(1)
             else:
