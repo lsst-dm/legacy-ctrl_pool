@@ -443,7 +443,7 @@ class BatchCmdLineTask(CmdLineTask):
             taskParser.error("Error in task preparation")
 
         setBatchType(batchArgs.batch)
-            
+
         if batchArgs.batch is None:     # don't use a batch system
             sys.argv = [sys.argv[0]] + batchArgs.leftover # Remove all batch arguments
 
