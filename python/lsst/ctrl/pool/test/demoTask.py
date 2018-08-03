@@ -37,7 +37,7 @@ class DemoTask(BatchPoolTask):
                       visitRef in parsedCmd.id.refList]
         return time*sum(math.ceil(tt/numCores) for tt in numTargets)
 
-    def run(self, visitRef):
+    def runDataRef(self, visitRef):
         """Main entry-point
 
         Only the master node runs this method.  It will dispatch jobs to the
@@ -51,11 +51,11 @@ class DemoTask(BatchPoolTask):
         dataIdList = collections.OrderedDict(sorted(dataIdList.items()))
 
         with self.logOperation("master"):
-            total = pool.reduce(operator.add, self.read, list(dataIdList.values()),
+            total = pool.reduce(operator.add, self.run, list(dataIdList.values()),
                                 butler=visitRef.getButler())
         self.log.info("Total number of pixels read: %d" % (total,))
 
-    def read(self, cache, dataId, butler=None):
+    def run(self, cache, dataId, butler=None):
         """Read image and return number of pixels
 
         Only the slave nodes run this method.
