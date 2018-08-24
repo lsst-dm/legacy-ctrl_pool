@@ -467,7 +467,7 @@ class BatchCmdLineTask(CmdLineTask):
         @param parsedCmd: Results of argument parsing
         @param numCores: Number of cores
         """
-        numTargets = len(cls.RunnerClass.getTargetList(parsedCmd))
+        numTargets = len(cls.getTargetList(parsedCmd))
         return time*numTargets/float(numCores)
 
     @classmethod
