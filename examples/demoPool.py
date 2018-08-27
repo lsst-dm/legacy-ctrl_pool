@@ -7,9 +7,7 @@
 # I suggest running with n=1, 3, NUM nodes to cover all the operational modes.
 #
 
-from __future__ import print_function
 import math
-from builtins import range
 from lsst.ctrl.pool.pool import startPool, Pool, Debugger
 NUM = 10  # Number of items in data list
 

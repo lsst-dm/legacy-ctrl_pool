@@ -1,7 +1,3 @@
-from future import standard_library
-from builtins import zip
-from builtins import range
-from builtins import object
 # MPI process pool
 # Copyright 2013 Paul A. Price
 #
@@ -33,7 +29,6 @@ import mpi4py.MPI as mpi
 from lsst.pipe.base import Struct
 from future.utils import with_metaclass
 
-standard_library.install_aliases()
 
 __all__ = ["Comm", "Pool", "startPool", "setBatchType", "getBatchType", "abortOnError", "NODE", ]
 

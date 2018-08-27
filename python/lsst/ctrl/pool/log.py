@@ -1,9 +1,7 @@
-from future import standard_library
 import os
 import copyreg
 import lsst.log as lsstLog
 from lsst.utils import getPackageDir
-standard_library.install_aliases()
 
 
 def pickleLog(log):

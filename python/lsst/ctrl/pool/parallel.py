@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import print_function
-from builtins import object
-
 import re
 import os
 import os.path
@@ -15,6 +12,7 @@ import traceback
 import contextlib
 from lsst.pipe.base import CmdLineTask, TaskRunner
 from .pool import startPool, Pool, NODE, abortOnError, setBatchType
+from . import log as dummyLog  # noqa
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
            "BatchCmdLineTask", "BatchPoolTask", ]
