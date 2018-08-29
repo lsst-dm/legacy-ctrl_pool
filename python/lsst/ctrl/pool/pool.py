@@ -1,9 +1,3 @@
-from future import standard_library
-standard_library.install_aliases()
-from builtins import zip
-from builtins import range
-from past.builtins import basestring
-from builtins import object
 # MPI process pool
 # Copyright 2013 Paul A. Price
 #
@@ -35,6 +29,7 @@ import mpi4py.MPI as mpi
 from lsst.pipe.base import Struct
 from future.utils import with_metaclass
 
+
 __all__ = ["Comm", "Pool", "startPool", "setBatchType", "getBatchType", "abortOnError", "NODE", ]
 
 NODE = "%s:%d" % (os.uname()[1], os.getpid())  # Name of node
@@ -58,6 +53,7 @@ def pickleInstanceMethod(method):
     obj = method.__self__
     name = method.__name__
     return unpickleInstanceMethod, (obj, name)
+
 
 copyreg.pickle(types.MethodType, pickleInstanceMethod)
 
@@ -89,6 +85,7 @@ def pickleFunction(function):
     funcName = function.__name__
     return unpickleFunction, (moduleName, funcName)
 
+
 copyreg.pickle(types.FunctionType, pickleFunction)
 
 try:
@@ -96,14 +93,17 @@ try:
 except NameError:
     _batchType = "unknown"
 
+
 def getBatchType():
     """Return a string giving the type of batch system in use"""
     return _batchType
+
 
 def setBatchType(batchType):
     """Return a string giving the type of batch system in use"""
     global _batchType
     _batchType = batchType
+
 
 def abortOnError(func):
     """Function decorator to throw an MPI abort on an unhandled exception"""
@@ -180,7 +180,7 @@ def guessPickleObj():
         # This should work if it's coming from the regular pickle module, and they
         # haven't changed the variable names since python 2.7.3.
         return stack[-2].tb_frame.f_locals["obj"]
-    except:
+    except Exception:
         return None
 
 
@@ -230,6 +230,7 @@ def pickleSniffer(abort=False):
                 mpi.COMM_WORLD.Abort(1)
             else:
                 sys.exit(1)
+
 
 def catchPicklingError(func):
     """Function decorator to catch errors in pickling and print something useful"""
@@ -508,9 +509,9 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
 
         The cache is updated with the contents of the store.
         """
-        if not context in self._cache:
+        if context not in self._cache:
             self._cache[context] = {}
-        if not context in self._store:
+        if context not in self._store:
             self._store[context] = {}
         cache = self._cache[context]
         store = self._store[context]
@@ -584,7 +585,7 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
     def storeSet(self, context, **kwargs):
         """Set values in store for a particular context"""
         self.log("storing", context, kwargs)
-        if not context in self._store:
+        if context not in self._store:
             self._store[context] = {}
         for name, value in kwargs.items():
             self._store[context][name] = value
@@ -592,7 +593,7 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
     def storeDel(self, context, *nameList):
         """Delete value in store for a particular context"""
         self.log("deleting from store", context, nameList)
-        if not context in self._store:
+        if context not in self._store:
             raise KeyError("No such context: %s" % context)
         for name in nameList:
             del self._store[context][name]
@@ -600,14 +601,14 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
     def storeClear(self, context):
         """Clear stored data for a particular context"""
         self.log("clearing store", context)
-        if not context in self._store:
+        if context not in self._store:
             raise KeyError("No such context: %s" % context)
         self._store[context] = {}
 
     def cacheClear(self, context):
         """Reset cache for a particular context"""
         self.log("clearing cache", context)
-        if not context in self._cache:
+        if context not in self._cache:
             return
         self._cache[context] = {}
 
@@ -618,7 +619,7 @@ class PoolNode(with_metaclass(SingletonMeta, object)):
 
     def storeList(self, context):
         """List contents of store for a particular context"""
-        if not context in self._store:
+        if context not in self._store:
             raise KeyError("No such context: %s" % context)
         sys.stderr.write("Store on %s (%s): %s\n" % (self.node, context, self._store[context]))
 

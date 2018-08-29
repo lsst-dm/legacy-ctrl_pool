@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from __future__ import print_function
-from builtins import object
-
 import re
 import os
 import os.path
@@ -15,7 +12,7 @@ import traceback
 import contextlib
 from lsst.pipe.base import CmdLineTask, TaskRunner
 from .pool import startPool, Pool, NODE, abortOnError, setBatchType
-from . import log  # register pickle functions for log
+from . import log as dummyLog  # noqa
 
 __all__ = ["Batch", "PbsBatch", "SlurmBatch", "SmpBatch", "BATCH_TYPES", "BatchArgumentParser",
            "BatchCmdLineTask", "BatchPoolTask", ]
@@ -290,8 +287,8 @@ class SmpBatch(Batch):
         return "exec %s" % scriptName
 
 
-BATCH_TYPES = {'none' : None,
-               'None' : None,
+BATCH_TYPES = {'none': None,
+               'None': None,
                'pbs': PbsBatch,
                'slurm': SlurmBatch,
                'smp': SmpBatch,
@@ -445,7 +442,7 @@ class BatchCmdLineTask(CmdLineTask):
         setBatchType(batchArgs.batch)
 
         if batchArgs.batch is None:     # don't use a batch system
-            sys.argv = [sys.argv[0]] + batchArgs.leftover # Remove all batch arguments
+            sys.argv = [sys.argv[0]] + batchArgs.leftover  # Remove all batch arguments
 
             return cls.parseAndRun()
         else:
@@ -510,7 +507,7 @@ class BatchCmdLineTask(CmdLineTask):
         self.log.info("%s: Start %s" % (NODE, operation))
         try:
             yield
-        except:
+        except Exception:
             if catch:
                 cls, e, _ = sys.exc_info()
                 self.log.warn("%s: Caught %s while %s: %s" % (NODE, cls.__name__, operation, e))
@@ -560,7 +557,6 @@ class BatchTaskRunner(TaskRunner):
         """
         resultList = None
 
-        import multiprocessing
         self.prepareForMultiProcessing()
         pool = Pool()
 
@@ -573,7 +569,7 @@ class BatchTaskRunner(TaskRunner):
                 resultList = pool.map(self, targetList)
             else:
                 parsedCmd.log.warn("Not running the task because there is no data to process; "
-                    "you may preview data using \"--show data\"")
+                                   "you may preview data using \"--show data\"")
                 resultList = []
 
         return resultList

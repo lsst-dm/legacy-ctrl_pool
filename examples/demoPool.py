@@ -7,12 +7,9 @@
 # I suggest running with n=1, 3, NUM nodes to cover all the operational modes.
 #
 
-from __future__ import print_function
-from builtins import map
-from builtins import range
-NUM = 10  # Number of items in data list
-
 import math
+from lsst.ctrl.pool.pool import startPool, Pool, Debugger
+NUM = 10  # Number of items in data list
 
 
 def test1(cache, data, *args, **kwargs):
@@ -30,7 +27,6 @@ def test2(cache, data, *args, **kwargs):
                                                        args, cache.kwargs, kwargs, hasattr(cache, "p")))
     return None
 
-from lsst.ctrl.pool.pool import startPool, Pool, Debugger, Comm
 
 # Here's how to enable debugging messages from the pool
 Debugger().enabled = True
@@ -67,6 +63,7 @@ def context3(pool3):
     pool1.cacheClear()
     pool3.storeClear()
     pool3.storeList()
+
 
 pool1 = Pool(1)
 context1(pool1)
