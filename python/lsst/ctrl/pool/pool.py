@@ -381,14 +381,14 @@ class SingletonMeta(type):
       "__new__" in the class).
     """
 
-    def __init__(self, name, bases, dict_):
-        super(SingletonMeta, self).__init__(name, bases, dict_)
-        self._instance = None
+    def __init__(cls, name, bases, dict_):
+        super(SingletonMeta, cls).__init__(name, bases, dict_)
+        cls._instance = None
 
-    def __call__(self, *args, **kwargs):
-        if self._instance is None:
-            self._instance = super(SingletonMeta, self).__call__(*args, **kwargs)
-        return self._instance
+    def __call__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(SingletonMeta, cls).__call__(*args, **kwargs)
+        return cls._instance
 
 
 class Debugger(with_metaclass(SingletonMeta, object)):
@@ -1181,8 +1181,8 @@ class PoolWrapperMeta(type):
     The 'context' is automatically supplied to these methods as the first argument.
     """
 
-    def __call__(self, context="default"):
-        instance = super(PoolWrapperMeta, self).__call__(context)
+    def __call__(cls, context="default"):
+        instance = super(PoolWrapperMeta, cls).__call__(context)
         pool = PoolMaster()
         for name in ("map", "mapNoBalance", "mapToPrevious",
                      "reduce", "reduceNoBalance", "reduceToPrevious",
