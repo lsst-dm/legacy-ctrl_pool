@@ -65,7 +65,7 @@ def printProcessStats():
     log.info("Process stats for %s: %s" % (NODE, processStats()))
 
 
-class Batch(object):
+class Batch:
     """Base class for batch submission"""
 
     def __init__(self, outputDir=None, numNodes=0, numProcsPerNode=0, numCores=0, queue=None, jobName=None,

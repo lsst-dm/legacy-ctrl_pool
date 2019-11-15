@@ -27,7 +27,6 @@ from contextlib import contextmanager
 import mpi4py.MPI as mpi
 
 from lsst.pipe.base import Struct
-from future.utils import with_metaclass
 
 
 __all__ = ["Comm", "Pool", "startPool", "setBatchType", "getBatchType", "abortOnError", "NODE", ]
@@ -124,7 +123,7 @@ def abortOnError(func):
     return wrapper
 
 
-class PickleHolder(object):
+class PickleHolder:
     """Singleton to hold what's about to be pickled.
 
     We hold onto the object in case there's trouble pickling,
@@ -334,12 +333,12 @@ class Comm(mpi.Intracomm):
         super(Comm, self).Free()
 
 
-class NoOp(object):
+class NoOp:
     """Object to signal no operation"""
     pass
 
 
-class Tags(object):
+class Tags:
     """Provides tag numbers by symbolic name in attributes"""
 
     def __init__(self, *nameList):
@@ -391,7 +390,7 @@ class SingletonMeta(type):
         return cls._instance
 
 
-class Debugger(with_metaclass(SingletonMeta, object)):
+class Debugger(metaclass=SingletonMeta):
     """Debug logger singleton
 
     Disabled by default; to enable, do: 'Debugger().enabled = True'
@@ -484,7 +483,7 @@ class ReductionThread(threading.Thread):
         return self._result
 
 
-class PoolNode(with_metaclass(SingletonMeta, object)):
+class PoolNode(metaclass=SingletonMeta):
     """Node in MPI process pool
 
     WARNING: You should not let a pool instance hang around at program
@@ -1192,7 +1191,7 @@ class PoolWrapperMeta(type):
         return instance
 
 
-class PoolWrapper(with_metaclass(PoolWrapperMeta, object)):
+class PoolWrapper(metaclass=PoolWrapperMeta):
     """Wrap PoolMaster to automatically provide context"""
 
     def __init__(self, context="default"):
