@@ -1,3 +1,6 @@
+tests/.tests
+_build.*
+.coverage
 *.pyc
 .scon*
 config.log
