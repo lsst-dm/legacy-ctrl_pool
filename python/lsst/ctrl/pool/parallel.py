@@ -317,6 +317,8 @@ class BatchArgumentParser(argparse.ArgumentParser):
         group.add_argument("--cores", type=int, default=0, help="Number of cores (Slurm/SMP only)")
         group.add_argument("--time", type=float, default=0,
                            help="Expected execution time per element (sec)")
+        group.add_argument("--walltime", type=float, default=0,
+                           help="Expected total execution walltime (sec); overrides cores & time")
         group.add_argument("--batch-type", dest="batchType", choices=list(BATCH_TYPES.keys()), default="smp",
                            help="Batch system to use")
         group.add_argument("--batch-verbose", dest="batchVerbose", action="store_true", default=False,
@@ -446,8 +448,11 @@ class BatchCmdLineTask(CmdLineTask):
 
             return cls.parseAndRun()
         else:
-            numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
-            walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numCores)
+            if batchArgs.walltime > 0:
+                walltime = batchArgs.walltime
+            else:
+                numCores = batchArgs.cores if batchArgs.cores > 0 else batchArgs.nodes*batchArgs.procs
+                walltime = cls.batchWallTime(batchArgs.time, batchArgs.parent, numCores)
 
             command = cls.batchCommand(batchArgs)
             batchArgs.batch.run(command, walltime=walltime)
