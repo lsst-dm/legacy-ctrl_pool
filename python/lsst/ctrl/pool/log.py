@@ -1,3 +1,4 @@
+import logging
 import os
 import copyreg
 import lsst.log as lsstLog
@@ -24,3 +25,9 @@ def jobLog(job):
     os.environ['JOBNAME'] = job
     lsstLog.configure(os.path.join(packageDir, "config/log4cxx.properties"))
     lsstLog.MDC("PID", os.getpid())
+
+    # Forward python logging to lsst.log
+    lgr = logging.getLogger()
+    lsst_log_level = lsstLog.getDefaultLogger().getEffectiveLevel()
+    lgr.setLevel(lsstLog.LevelTranslator.lsstLog2logging(lsst_log_level))
+    lgr.addHandler(lsstLog.LogHandler())
